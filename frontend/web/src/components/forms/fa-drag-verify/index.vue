@@ -4,9 +4,6 @@
     ref="dragVerify"
     class="drag_verify"
     :style="dragVerifyStyle"
-    @mousemove="dragMoving"
-    @mouseup="dragFinish"
-    @mouseleave="dragFinish"
     @touchmove="dragMoving"
     @touchend="dragFinish"
   >
@@ -168,6 +165,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener("touchstart", onTouchStart);
   document.removeEventListener("touchmove", onTouchMove);
+  removeMouseDragListeners();
 });
 
 // ----- 样式计算 -----
@@ -217,6 +215,11 @@ const dragStart = (e: MouseEvent | TouchEvent) => {
   startX.value = pageX;
   currentX.value = sliderPosition.value;
 
+  if (!("touches" in e)) {
+    document.addEventListener("mousemove", handleDocumentMouseMove);
+    document.addEventListener("mouseup", handleDocumentMouseUp);
+  }
+
   emit("handlerMove");
 };
 
@@ -234,6 +237,7 @@ const dragMoving = (e: MouseEvent | TouchEvent) => {
     sliderPosition.value = maxPosition;
     modelValue.value = true;
     isDragging.value = false;
+    removeMouseDragListeners();
     emit("passCallback");
   } else {
     sliderPosition.value = newPosition;
@@ -256,7 +260,22 @@ const dragFinish = () => {
     modelValue.value = true;
     emit("passCallback");
   }
+
+  removeMouseDragListeners();
 };
+
+function handleDocumentMouseMove(event: MouseEvent) {
+  dragMoving(event);
+}
+
+function handleDocumentMouseUp() {
+  dragFinish();
+}
+
+function removeMouseDragListeners() {
+  document.removeEventListener("mousemove", handleDocumentMouseMove);
+  document.removeEventListener("mouseup", handleDocumentMouseUp);
+}
 
 /**
  * 重置验证状态
