@@ -78,7 +78,9 @@ frontend/app/*
 
 .plan
 CLAUDE.md
-AGENTS.md
+# AGENTS.md 是仓库级开发规范，必须纳入版本控制。
+.ua/.trash-*/
+.ua/intermediate/
 .codebuddy
 .agent
 .workbuddy
