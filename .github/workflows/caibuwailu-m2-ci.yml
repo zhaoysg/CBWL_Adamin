@@ -10,7 +10,10 @@ on:
       - "backend/app/api/v1/module_membership/**"
       - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
       - "backend/app/init_app.py"
+      - "backend/app/scripts/initialize.py"
+      - "backend/sql/data/cw_menu.json"
       - "backend/tests/test_api_module_content.py"
+      - "backend/tests/test_project_menu_seed.py"
       - "frontend/web/src/api/module_content/**"
       - "frontend/web/src/api/module_membership/**"
       - "frontend/web/src/views/module_content/**"
@@ -24,7 +27,10 @@ on:
       - "backend/app/api/v1/module_membership/**"
       - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
       - "backend/app/init_app.py"
+      - "backend/app/scripts/initialize.py"
+      - "backend/sql/data/cw_menu.json"
       - "backend/tests/test_api_module_content.py"
+      - "backend/tests/test_project_menu_seed.py"
       - "frontend/web/src/api/module_content/**"
       - "frontend/web/src/api/module_membership/**"
       - "frontend/web/src/views/module_content/**"
@@ -62,13 +68,18 @@ jobs:
       - name: Sync locked dependencies
         run: uv sync --frozen
 
+      - name: Validate project menu JSON
+        run: uv run python -m json.tool sql/data/cw_menu.json >/dev/null
+
       - name: Compile changed backend modules
         run: >-
           uv run python -m compileall -q
           app/api/v1/module_content
           app/api/v1/module_membership
           app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
           tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
 
       - name: Ruff lint
         run: >-
@@ -76,7 +87,9 @@ jobs:
           app/api/v1/module_content
           app/api/v1/module_membership
           app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
           tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
           app/init_app.py
 
       - name: Ruff format check
@@ -85,14 +98,23 @@ jobs:
           app/api/v1/module_content
           app/api/v1/module_membership
           app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
           tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
           app/init_app.py
 
       - name: Security scan changed backend modules
-        run: uvx bandit -q -r app/api/v1/module_content app/api/v1/module_membership
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/scripts/initialize.py
 
-      - name: Run M2 API workflow tests
-        run: uv run pytest -q tests/test_api_module_content.py
+      - name: Run M2 API and menu workflow tests
+        run: >-
+          uv run pytest -q
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
 
       - name: Run application smoke tests
         run: uv run pytest -q tests/test_main.py
@@ -108,6 +130,38 @@ jobs:
           uv run alembic -c alembic.ini upgrade head
           uv run alembic -c alembic.ini downgrade base
           uv run alembic -c alembic.ini upgrade head
+
+  admin-web-build:
+    name: FastApiAdmin typecheck, build and dependency audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.3 --activate
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck administration frontend
+        run: pnpm run type-check
+
+      - name: Build production administration frontend
+        run: pnpm run build:prod
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
 
   mysql-migration:
     name: MySQL 8.4 migration round trip
