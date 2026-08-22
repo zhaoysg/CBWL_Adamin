@@ -21,9 +21,7 @@ class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchem
         conditions = await self._build_conditions(id=id)
         if for_update:
             # 仅锁主表，避免 PostgreSQL 对 joinedload 外连接执行 FOR UPDATE 时失败。
-            lock_result = await self.db.execute(
-                select(ContentModel.id).where(*conditions).with_for_update()
-            )
+            lock_result = await self.db.execute(select(ContentModel.id).where(*conditions).with_for_update())
             if lock_result.scalar_one_or_none() is None:
                 return None
 
@@ -53,10 +51,7 @@ class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchem
     async def replace_plan_ids(self, content_id: int, plan_ids: list[int]) -> None:
         await self.db.execute(delete(ContentPlanModel).where(ContentPlanModel.content_id == content_id))
         if plan_ids:
-            self.db.add_all(
-                ContentPlanModel(content_id=content_id, plan_id=plan_id)
-                for plan_id in sorted(set(plan_ids))
-            )
+            self.db.add_all(ContentPlanModel(content_id=content_id, plan_id=plan_id) for plan_id in sorted(set(plan_ids)))
         await self.db.flush()
 
     async def update_with_version(
@@ -77,8 +72,6 @@ class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchem
             id=content_id,
             version_no=expected_version,
         )
-        result = await self.db.execute(
-            update(ContentModel).where(*conditions).values(**payload)
-        )
+        result = await self.db.execute(update(ContentModel).where(*conditions).values(**payload))
         await self.db.flush()
         return bool(getattr(result, "rowcount", 0) == 1)
