@@ -1,0 +1,164 @@
+-- 财不外露 M1 业务模型（MySQL 8.0+）
+-- sys_user 继续复用 FastApiAdmin；以下表覆盖会员、内容、学院和学习进度。
+SET NAMES utf8mb4;
+SET FOREIGN_KEY_CHECKS = 0;
+
+CREATE TABLE IF NOT EXISTS cb_member_plan (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  plan_code VARCHAR(64) NOT NULL,
+  plan_name VARCHAR(128) NOT NULL,
+  level_no INT NOT NULL DEFAULT 1,
+  price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  duration_days INT NOT NULL DEFAULT 365,
+  benefits JSON NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  sort_no INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_cb_plan_code (plan_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会员套餐';
+
+CREATE TABLE IF NOT EXISTS cb_member_subscription (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  plan_id BIGINT UNSIGNED NOT NULL,
+  source_type VARCHAR(32) NOT NULL DEFAULT 'manual',
+  started_at DATETIME NOT NULL,
+  expired_at DATETIME NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  order_no VARCHAR(64) NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), KEY idx_cb_subscription_user (user_id,status,expired_at),
+  CONSTRAINT fk_cb_subscription_plan FOREIGN KEY (plan_id) REFERENCES cb_member_plan(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='会员订阅';
+
+CREATE TABLE IF NOT EXISTS cb_content_category (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  parent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  category_code VARCHAR(64) NOT NULL,
+  category_name VARCHAR(128) NOT NULL,
+  icon VARCHAR(255) NULL,
+  sort_no INT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_cb_category_code (category_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内容分类';
+
+CREATE TABLE IF NOT EXISTS cb_content (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  category_id BIGINT UNSIGNED NOT NULL,
+  content_type VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  summary VARCHAR(1000) NULL,
+  cover_url VARCHAR(500) NULL,
+  body LONGTEXT NULL,
+  external_url VARCHAR(1000) NULL,
+  author_id BIGINT NULL,
+  author_name VARCHAR(128) NULL,
+  access_level VARCHAR(32) NOT NULL DEFAULT 'public',
+  required_plan_ids JSON NULL,
+  is_pinned TINYINT NOT NULL DEFAULT 0,
+  is_featured TINYINT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 0,
+  published_at DATETIME NULL,
+  like_count INT NOT NULL DEFAULT 0,
+  comment_count INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), KEY idx_cb_content_feed (status,published_at,category_id),
+  FULLTEXT KEY ft_cb_content (title,summary),
+  CONSTRAINT fk_cb_content_category FOREIGN KEY (category_id) REFERENCES cb_content_category(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='投研内容';
+
+CREATE TABLE IF NOT EXISTS cb_content_interaction (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  content_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT NOT NULL,
+  interaction_type VARCHAR(24) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_cb_interaction (content_id,user_id,interaction_type),
+  CONSTRAINT fk_cb_interaction_content FOREIGN KEY (content_id) REFERENCES cb_content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='点赞收藏';
+
+CREATE TABLE IF NOT EXISTS cb_content_comment (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  content_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT NOT NULL,
+  parent_id BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  content VARCHAR(2000) NOT NULL,
+  status TINYINT NOT NULL DEFAULT 1,
+  like_count INT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), KEY idx_cb_comment_content (content_id,status,created_at),
+  CONSTRAINT fk_cb_comment_content FOREIGN KEY (content_id) REFERENCES cb_content(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内容评论';
+
+CREATE TABLE IF NOT EXISTS cb_academy_course (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  course_code VARCHAR(64) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  summary VARCHAR(1000) NULL,
+  cover_url VARCHAR(500) NULL,
+  course_type VARCHAR(32) NOT NULL DEFAULT 'course',
+  level_label VARCHAR(64) NULL,
+  access_level VARCHAR(32) NOT NULL DEFAULT 'public',
+  required_plan_ids JSON NULL,
+  price DECIMAL(12,2) NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 0,
+  sort_no INT NOT NULL DEFAULT 0,
+  published_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_cb_course_code (course_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程专栏直播';
+
+CREATE TABLE IF NOT EXISTS cb_academy_chapter (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  course_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  sort_no INT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), KEY idx_cb_chapter_course (course_id,sort_no),
+  CONSTRAINT fk_cb_chapter_course FOREIGN KEY (course_id) REFERENCES cb_academy_course(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程章节';
+
+CREATE TABLE IF NOT EXISTS cb_academy_lesson (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  course_id BIGINT UNSIGNED NOT NULL,
+  chapter_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  lesson_type VARCHAR(32) NOT NULL DEFAULT 'video',
+  resource_url VARCHAR(1000) NULL,
+  body LONGTEXT NULL,
+  duration_seconds INT NOT NULL DEFAULT 0,
+  sort_no INT NOT NULL DEFAULT 0,
+  status TINYINT NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), KEY idx_cb_lesson (course_id,chapter_id,sort_no),
+  CONSTRAINT fk_cb_lesson_course FOREIGN KEY (course_id) REFERENCES cb_academy_course(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cb_lesson_chapter FOREIGN KEY (chapter_id) REFERENCES cb_academy_chapter(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='课程课时';
+
+CREATE TABLE IF NOT EXISTS cb_learning_progress (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  course_id BIGINT UNSIGNED NOT NULL,
+  lesson_id BIGINT UNSIGNED NULL,
+  progress_percent INT NOT NULL DEFAULT 0,
+  learned_seconds INT NOT NULL DEFAULT 0,
+  completed_lesson_count INT NOT NULL DEFAULT 0,
+  last_studied_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_cb_progress (user_id,course_id),
+  CONSTRAINT fk_cb_progress_course FOREIGN KEY (course_id) REFERENCES cb_academy_course(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cb_progress_lesson FOREIGN KEY (lesson_id) REFERENCES cb_academy_lesson(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='学习进度';
+
+SET FOREIGN_KEY_CHECKS = 1;
