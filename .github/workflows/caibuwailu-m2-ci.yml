@@ -14,6 +14,7 @@ on:
       - "backend/sql/data/cw_menu.json"
       - "backend/tests/test_api_module_content.py"
       - "backend/tests/test_project_menu_seed.py"
+      - "backend/tests/test_main.py"
       - "frontend/web/package.json"
       - "frontend/web/pnpm-lock.yaml"
       - "frontend/web/vite.config.ts"
@@ -37,6 +38,7 @@ on:
       - "backend/sql/data/cw_menu.json"
       - "backend/tests/test_api_module_content.py"
       - "backend/tests/test_project_menu_seed.py"
+      - "backend/tests/test_main.py"
       - "frontend/web/package.json"
       - "frontend/web/pnpm-lock.yaml"
       - "frontend/web/vite.config.ts"
@@ -92,6 +94,7 @@ jobs:
           app/scripts/initialize.py
           tests/test_api_module_content.py
           tests/test_project_menu_seed.py
+          tests/test_main.py
 
       - name: Ruff lint
         run: >-
@@ -102,6 +105,7 @@ jobs:
           app/scripts/initialize.py
           tests/test_api_module_content.py
           tests/test_project_menu_seed.py
+          tests/test_main.py
           app/init_app.py
 
       - name: Ruff format check
@@ -113,6 +117,7 @@ jobs:
           app/scripts/initialize.py
           tests/test_api_module_content.py
           tests/test_project_menu_seed.py
+          tests/test_main.py
           app/init_app.py
 
       - name: Security scan changed backend modules
