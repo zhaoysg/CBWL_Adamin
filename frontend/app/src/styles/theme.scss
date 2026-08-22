@@ -1,0 +1,17 @@
+$navy: #062341;
+$gold: #ffb21c;
+$orange: #ff8b23;
+$bg: #f5f7fa;
+$text: #121722;
+$muted: #747d89;
+
+page { background: $bg; color: $text; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.hero { padding: 42rpx 32rpx 32rpx; color: #fff; background: linear-gradient(120deg, #031a34, #0b3c6a); }
+.brand { font-size: 44rpx; font-weight: 900; }
+.subtitle { margin-top: 10rpx; color: rgba(255,255,255,.72); font-size: 24rpx; }
+.card { margin: 24rpx 30rpx; padding: 28rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 16rpx 40rpx rgba(5,35,66,.08); }
+.title { font-size: 34rpx; font-weight: 800; line-height: 1.45; }
+.muted { margin-top: 10rpx; color: $muted; font-size: 25rpx; line-height: 1.65; }
+.gold { color: $orange; font-weight: 800; }
+.badge { padding: 6rpx 12rpx; border-radius: 10rpx; color: #15715f; background: #e2f8f1; font-size: 21rpx; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
