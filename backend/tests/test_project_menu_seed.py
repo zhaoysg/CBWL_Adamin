@@ -12,7 +12,10 @@ def _flatten(nodes: list[dict], parent_route_name: str | None = None) -> list[di
         row["_parent_route_name"] = parent_route_name
         result.append(row)
         result.extend(
-            _flatten(node.get("children") or [], node.get("route_name") or parent_route_name)
+            _flatten(
+                node.get("children") or [],
+                node.get("route_name") or parent_route_name,
+            )
         )
     return result
 
@@ -55,7 +58,9 @@ def test_project_menu_seed_contains_routes_and_permissions(
     assert payload["success"] is True
 
     menus = _flatten(payload["data"])
-    by_route_name = {item.get("route_name"): item for item in menus if item.get("route_name")}
+    by_route_name = {
+        item.get("route_name"): item for item in menus if item.get("route_name")
+    }
     permissions = {item.get("permission") for item in menus if item.get("permission")}
 
     assert {
