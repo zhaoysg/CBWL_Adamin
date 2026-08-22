@@ -99,7 +99,11 @@ async def create_content_category_controller(
     data: Annotated[ContentCategoryCreateSchema, Body(description="内容分类创建参数")],
 ) -> JSONResponse:
     result = await ContentCategoryService(auth, db).create(data)
-    return SuccessResponse(data=result, msg="创建内容分类成功")
+    return SuccessResponse(
+        data=result,
+        msg="创建内容分类成功",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @ContentCategoryRouter.put(
