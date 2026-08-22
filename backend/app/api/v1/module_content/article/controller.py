@@ -74,7 +74,11 @@ async def create_content_controller(
     data: Annotated[ContentCreateSchema, Body(description="投研内容创建参数")],
 ) -> JSONResponse:
     result = await ContentService(auth, db).create(data)
-    return SuccessResponse(data=result, msg="创建投研内容草稿成功")
+    return SuccessResponse(
+        data=result,
+        msg="创建投研内容草稿成功",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @ContentArticleRouter.patch(
