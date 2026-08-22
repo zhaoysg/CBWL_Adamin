@@ -6,6 +6,11 @@ on:
       - feature/caibuwailu-m1
     paths:
       - ".github/workflows/caibuwailu-review-snapshot.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/caibuwailu-review-snapshot.yml"
   workflow_dispatch:
 
 permissions:
