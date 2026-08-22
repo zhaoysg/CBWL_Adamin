@@ -143,7 +143,70 @@ class ProfileResponse(BaseModel):
     assets: list[AssetEntry]
 
 
+class ContentSection(BaseModel):
+    heading: str | None = None
+    paragraphs: list[str]
+
+
+class ContentDetailResponse(BaseModel):
+    id: int
+    category: str
+    title: str
+    summary: str
+    published_at: datetime
+    access_level: AccessLevel
+    like_count: int
+    comment_count: int
+    reading_minutes: int
+    author: Author
+    sections: list[ContentSection]
+
+
+class LessonSummary(BaseModel):
+    id: int
+    title: str
+    duration_minutes: int
+    is_preview: bool = False
+    learned: bool = False
+
+
+class CourseChapter(BaseModel):
+    id: int
+    title: str
+    lessons: list[LessonSummary]
+
+
+class CourseDetailResponse(BaseModel):
+    id: int
+    level: str
+    duration_hours: float
+    lesson_count: int
+    title: str
+    summary: str
+    price_label: str
+    progress: int
+    student_count: int
+    highlights: list[str]
+    chapters: list[CourseChapter]
+
+
+class MemberPlan(BaseModel):
+    code: str
+    name: str
+    period_label: str
+    price: float
+    original_price: float | None = None
+    benefits: list[str]
+    recommended: bool = False
+
+
+class MemberCenterResponse(BaseModel):
+    member: MemberSummary
+    current_benefits: list[str]
+    plans: list[MemberPlan]
+
+
 class PortalHealth(BaseModel):
     status: Literal["ok"] = "ok"
     service: str = "caibuwailu-portal"
-    version: str = "0.1.0"
+    version: str = "0.2.0"
