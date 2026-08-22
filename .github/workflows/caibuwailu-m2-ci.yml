@@ -1,4 +1,4 @@
-name: 财不外露 M2 Ruff 格式修复（临时）
+name: 财不外露 M2 正式闸门恢复（临时）
 
 on:
   pull_request:
@@ -11,11 +11,11 @@ permissions:
   contents: write
 
 concurrency:
-  group: caibuwailu-m2-ruff-repair-${{ github.event.pull_request.number }}
+  group: caibuwailu-m2-gate-restore-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  repair:
+  restore:
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -26,34 +26,18 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Restore verified production M2 workflow
+        run: >-
+          git show
+          9594f1dd30a000af8a721341d0a1a8f5426fe51f:.github/workflows/caibuwailu-m2-ci.yml
+          > .github/workflows/caibuwailu-m2-ci.yml
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Sync locked dependencies
-        working-directory: backend
-        run: uv sync --frozen
-
-      - name: Format project menu seed tests with locked Ruff
-        working-directory: backend
-        run: uv run ruff format tests/test_project_menu_seed.py
-
-      - name: Commit deterministic formatting
+      - name: Commit restored quality gates
         run: |
           git diff --check
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/tests/test_project_menu_seed.py
-          if git diff --cached --quiet; then
-            echo "Ruff formatting already clean."
-            exit 0
-          fi
-          git commit -m "style(test): apply locked Ruff formatter"
+          git add .github/workflows/caibuwailu-m2-ci.yml
+          git commit -m "ci(m2): restore production quality gates after formatting repair"
           git pull --rebase origin ${{ github.event.pull_request.head.ref }}
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
