@@ -123,7 +123,7 @@ class InitializeData:
                 raise
 
         # 项目菜单采用独立、幂等的补充种子。即使 sys_menu 已有历史数据，
-        # 也会按 route_name / permission 补齐财不外露业务菜单和按钮权限。
+        # 也会按路由身份补齐页面、按权限身份补齐按钮。
         await self.__ensure_project_menus(db)
 
     @staticmethod
@@ -151,6 +151,29 @@ class InitializeData:
             await self.__upsert_menu_node(db, deepcopy(root), parent_id=None)
         logger.info("✅️ 财不外露项目菜单与按钮权限已校验")
 
+    @staticmethod
+    def __menu_identity(node_data: dict[str, Any], parent_id: int | None):
+        """构建稳定且不跨菜单类型碰撞的幂等身份。"""
+        permission = node_data.get("permission")
+        route_name = node_data.get("route_name")
+        route_path = node_data.get("route_path")
+        menu_type = node_data.get("type")
+
+        if menu_type == 3:
+            if not permission:
+                raise ValueError("按钮菜单必须配置 permission")
+            return and_(MenuModel.type == 3, MenuModel.permission == permission)
+
+        if route_name:
+            return and_(MenuModel.type == menu_type, MenuModel.route_name == route_name)
+
+        parent_condition = MenuModel.parent_id.is_(None) if parent_id is None else MenuModel.parent_id == parent_id
+        return and_(
+            MenuModel.type == menu_type,
+            MenuModel.route_path == route_path,
+            parent_condition,
+        )
+
     async def __upsert_menu_node(
         self,
         db: AsyncSession,
@@ -158,30 +181,17 @@ class InitializeData:
         parent_id: int | None,
     ) -> MenuModel:
         children = node_data.pop("children", [])
-        permission = node_data.get("permission")
-        route_name = node_data.get("route_name")
-        route_path = node_data.get("route_path")
-        menu_type = node_data.get("type")
-
-        if permission:
-            identity = MenuModel.permission == permission
-        elif route_name:
-            identity = MenuModel.route_name == route_name
-        else:
-            parent_condition = MenuModel.parent_id.is_(None) if parent_id is None else MenuModel.parent_id == parent_id
-            identity = and_(
-                MenuModel.route_path == route_path,
-                MenuModel.type == menu_type,
-                parent_condition,
-            )
-
+        identity = self.__menu_identity(node_data, parent_id)
         menu = await db.scalar(select(MenuModel).where(identity).limit(1))
         payload = {field: node_data.get(field) for field in self._MENU_UPDATE_FIELDS if field in node_data}
+
         if menu is None:
             menu = MenuModel(**payload, parent_id=parent_id)
             db.add(menu)
             await db.flush()
         else:
+            if menu.id == parent_id:
+                raise ValueError(f"菜单 {menu.id} 不能成为自己的父节点")
             for field, value in payload.items():
                 setattr(menu, field, value)
             menu.parent_id = parent_id
