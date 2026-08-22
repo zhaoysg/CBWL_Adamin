@@ -1,18 +1,34 @@
 {
   "pages": [
-    {"path": "pages/home/index", "style": {"navigationStyle": "custom"}},
-    {"path": "pages/academy/index", "style": {"navigationStyle": "custom"}},
-    {"path": "pages/mine/index", "style": {"navigationStyle": "custom"}}
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "财不外露"
+      }
+    },
+    {
+      "path": "pages/academy/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "投研学院"
+      }
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "个人中心"
+      }
+    }
   ],
-  "tabBar": {
-    "color": "#15191f",
-    "selectedColor": "#073d6f",
-    "backgroundColor": "#ffffff",
-    "list": [
-      {"pagePath": "pages/home/index", "text": "首页"},
-      {"pagePath": "pages/academy/index", "text": "学院"},
-      {"pagePath": "pages/mine/index", "text": "我的"}
-    ]
-  },
-  "globalStyle": {"backgroundColor": "#f5f7fa", "navigationBarTitleText": "财不外露"}
+  "globalStyle": {
+    "navigationStyle": "custom",
+    "backgroundColor": "#f4f6f9",
+    "backgroundTextStyle": "dark",
+    "enablePullDownRefresh": false,
+    "app-plus": {
+      "bounce": "none"
+    }
+  }
 }
