@@ -2,7 +2,7 @@
 import { onLaunch } from "@dcloudio/uni-app";
 
 onLaunch(() => {
-  console.info("财不外露用户端启动");
+  if (import.meta.env.DEV) console.info("财不外露用户端启动");
 });
 </script>
 
