@@ -1,0 +1,15 @@
+{
+  "name": "财不外露",
+  "appid": "__UNI__CAIBUWAILU",
+  "description": "财不外露会员投研与学习平台",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "distribute": {
+      "android": {"minSdkVersion": 23, "targetSdkVersion": 35, "permissions": []},
+      "ios": {}
+    }
+  },
+  "h5": {"title": "财不外露", "router": {"mode": "history", "base": "/"}}
+}
