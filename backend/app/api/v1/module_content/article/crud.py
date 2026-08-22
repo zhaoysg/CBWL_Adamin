@@ -19,11 +19,17 @@ class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchem
 
     async def get_detail(self, id: int, *, for_update: bool = False) -> ContentModel | None:
         conditions = await self._build_conditions(id=id)
+        if for_update:
+            # 仅锁主表，避免 PostgreSQL 对 joinedload 外连接执行 FOR UPDATE 时失败。
+            lock_result = await self.db.execute(
+                select(ContentModel.id).where(*conditions).with_for_update()
+            )
+            if lock_result.scalar_one_or_none() is None:
+                return None
+
         sql = select(ContentModel).where(*conditions)
         for option in self._loader_options(["category", "content_plans"]):
             sql = sql.options(option)
-        if for_update:
-            sql = sql.with_for_update()
         result = await self.db.execute(sql)
         return result.scalars().first()
 
@@ -67,14 +73,12 @@ class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchem
         if self.auth.user.id:
             payload["updated_id"] = self.auth.user.id
 
+        conditions = await self._build_conditions(
+            id=content_id,
+            version_no=expected_version,
+        )
         result = await self.db.execute(
-            update(ContentModel)
-            .where(
-                ContentModel.id == content_id,
-                ContentModel.version_no == expected_version,
-                ContentModel.is_deleted.is_(False),
-            )
-            .values(**payload)
+            update(ContentModel).where(*conditions).values(**payload)
         )
         await self.db.flush()
         return bool(getattr(result, "rowcount", 0) == 1)
