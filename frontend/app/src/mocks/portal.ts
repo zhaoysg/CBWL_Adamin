@@ -29,6 +29,8 @@ export const mockHome: HomeResponse = {
       subtitle: "从零构建您的专业投研认知体系与底层逻辑",
       icon: "guide",
       accent: "orange",
+      target_type: "content",
+      target_id: 1001,
     },
     {
       id: 2,
@@ -36,6 +38,8 @@ export const mockHome: HomeResponse = {
       subtitle: "涵盖基本面、宏观周期、量化工具与投教完整矩阵",
       icon: "compass",
       accent: "blue",
+      target_type: "academy",
+      target_id: null,
     },
     {
       id: 3,
@@ -43,6 +47,8 @@ export const mockHome: HomeResponse = {
       subtitle: "理清算力、芯片、先进制程与大模型应用产业链机会",
       icon: "chip",
       accent: "cyan",
+      target_type: "content",
+      target_id: 1003,
     },
   ],
   categories: ["全部", "交易追踪", "机构观点", "宏观市场"],
@@ -151,6 +157,7 @@ export const mockAcademy: AcademyResponse = {
   courses: [
     {
       id: 4001,
+      category: "新手入门",
       level: "入门",
       duration_hours: 3.5,
       lesson_count: 6,
@@ -163,6 +170,7 @@ export const mockAcademy: AcademyResponse = {
     },
     {
       id: 4002,
+      category: "美股/技术",
       level: "进阶",
       duration_hours: 6,
       lesson_count: 10,
@@ -175,6 +183,7 @@ export const mockAcademy: AcademyResponse = {
     },
     {
       id: 4003,
+      category: "期权衍生品",
       level: "进阶",
       duration_hours: 5.2,
       lesson_count: 8,
@@ -221,7 +230,8 @@ export const mockProfile: ProfileResponse = {
 };
 
 export function createMockContentDetail(id: number): ContentDetailResponse {
-  const item = mockHome.feed.find((entry) => entry.id === id) || mockHome.feed[0];
+  const item = mockHome.feed.find((entry) => entry.id === id);
+  if (!item) throw new Error("内容不存在");
   return {
     id: item.id,
     category: item.category,
@@ -253,7 +263,8 @@ export function createMockContentDetail(id: number): ContentDetailResponse {
 }
 
 export function createMockCourseDetail(id: number): CourseDetailResponse {
-  const course = mockAcademy.courses.find((entry) => entry.id === id) || mockAcademy.courses[0];
+  const course = mockAcademy.courses.find((entry) => entry.id === id);
+  if (!course) throw new Error("课程不存在");
   const lessons = Array.from({ length: course.lesson_count }, (_, index) => ({
     id: index + 1,
     title: [
@@ -271,6 +282,7 @@ export function createMockCourseDetail(id: number): CourseDetailResponse {
   const splitAt = Math.ceil(lessons.length / 2);
   return {
     id: course.id,
+    category: course.category,
     level: course.level,
     duration_hours: course.duration_hours,
     lesson_count: course.lesson_count,
@@ -301,8 +313,8 @@ export const mockMemberCenter: MemberCenterResponse = {
       code: "month",
       name: "月度会员",
       period_label: "连续 30 天",
-      price: 99,
-      original_price: 129,
+      price: "99.00",
+      original_price: "129.00",
       benefits: ["会员专栏", "直播回看"],
       recommended: false,
     },
@@ -310,8 +322,8 @@ export const mockMemberCenter: MemberCenterResponse = {
       code: "year",
       name: "星球尊享年会员",
       period_label: "连续 365 天",
-      price: 899,
-      original_price: 1188,
+      price: "899.00",
+      original_price: "1188.00",
       benefits: ["全部专栏", "全部直播", "研讨专席"],
       recommended: true,
     },
