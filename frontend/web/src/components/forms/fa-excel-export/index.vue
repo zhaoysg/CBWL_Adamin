@@ -144,12 +144,7 @@ function validateData(data: ExportData[]) {
   }
 }
 
-function formatCellValue(
-  value: ExportValue,
-  key: string,
-  row: ExportData,
-  index: number
-): string {
+function formatCellValue(value: ExportValue, key: string, row: ExportData, index: number): string {
   const formatter = props.columns[key]?.formatter;
   if (formatter) return formatter(value, row, index);
   if (value === null || value === undefined) return "";

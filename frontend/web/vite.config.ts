@@ -100,7 +100,6 @@ export default ({ mode }: { mode: string }) => {
             if (id.includes("xgplayer")) return "xgplayer";
             if (id.includes("markdown-it")) return "markdown";
             if (id.includes("@iconify-json")) return "iconify-icons";
-            if (id.includes("xlsx")) return "xlsx";
             if (id.includes("crypto-js")) return "crypto";
             if (id.includes("dayjs")) return "dayjs";
             if (
@@ -355,7 +354,6 @@ export default ({ mode }: { mode: string }) => {
         "@iconify/iconify",
         "@iconify/vue",
         "qrcode.vue",
-        "xlsx",
         "highlight.js",
         "dagre",
         "dompurify",
