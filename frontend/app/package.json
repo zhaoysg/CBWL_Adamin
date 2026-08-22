@@ -16,9 +16,12 @@
     "dev:app-ios": "uni -p app-ios",
     "build": "uni build",
     "build:h5": "uni build --mode production",
+    "build:h5:acceptance": "uni build --mode acceptance",
     "build:app": "uni build -p app",
     "build:app-android": "uni build -p app-android",
     "build:app-ios": "uni build -p app-ios",
+    "build:app-android:production": "uni build -p app-android --mode production",
+    "build:app-ios:production": "uni build -p app-ios --mode production",
     "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
