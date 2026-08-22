@@ -98,10 +98,16 @@ class ContentService:
             raise self._conflict("已归档内容不可直接编辑，请先复制为新草稿")
 
         patch = data.model_dump(exclude_unset=True, exclude={"version_no"})
-        requested_plan_ids = patch.pop("plan_ids", None) if "plan_ids" in patch else None
+        plan_ids_provided = "plan_ids" in patch
+        requested_plan_ids = patch.pop("plan_ids", None)
+        if not patch and not plan_ids_provided:
+            raise CustomException(msg="未提供任何可更新字段", status_code=RET.BAD_REQUEST.code)
 
         final_category_id = patch.get("category_id", current.category_id)
-        await self._assert_category(final_category_id, require_enabled=False)
+        await self._assert_category(
+            final_category_id,
+            require_enabled=current.status == 1,
+        )
 
         final_slug = patch.get("slug", current.slug)
         await self._assert_slug_unique(final_slug, exclude_id=id)
@@ -110,8 +116,8 @@ class ContentService:
             patch["body"] = self._sanitize_body(patch["body"] or "")
 
         final_access_level = patch.get("access_level", current.access_level)
-        if requested_plan_ids is not None:
-            final_plan_ids = requested_plan_ids
+        if plan_ids_provided:
+            final_plan_ids = requested_plan_ids or []
         elif final_access_level == "premium":
             final_plan_ids = current.plan_ids
         else:
