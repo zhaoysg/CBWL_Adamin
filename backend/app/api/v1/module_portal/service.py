@@ -1,5 +1,6 @@
 from copy import deepcopy
 from datetime import date, datetime, timezone
+from decimal import Decimal
 
 from .schema import (
     AcademyResponse,
@@ -43,10 +44,10 @@ MEMBER = MemberSummary(
 
 
 class PortalService:
-    """M2 Portal read model.
+    """M1 deterministic acceptance read model.
 
-    当前以确定性演示数据稳定移动端/API 合约；M3 切换 SQLAlchemy
-    Repository 时保持响应模型和路由不变。
+    This provider is blocked by default in production. M2 replaces it with a
+    SQLAlchemy repository while preserving the validated response contracts.
     """
 
     @staticmethod
@@ -63,6 +64,8 @@ class PortalService:
                     subtitle="从零构建您的专业投研认知体系与底层逻辑",
                     icon="guide",
                     accent="orange",
+                    target_type="content",
+                    target_id=1001,
                 ),
                 PinnedItem(
                     id=2,
@@ -70,6 +73,7 @@ class PortalService:
                     subtitle="涵盖基本面、宏观周期、量化工具与投教完整矩阵",
                     icon="compass",
                     accent="blue",
+                    target_type="academy",
                 ),
                 PinnedItem(
                     id=3,
@@ -77,6 +81,8 @@ class PortalService:
                     subtitle="理清算力、芯片、先进制程与大模型应用产业链机会",
                     icon="chip",
                     accent="cyan",
+                    target_type="content",
+                    target_id=1003,
                 ),
             ],
             categories=["全部", "交易追踪", "机构观点", "宏观市场"],
@@ -182,6 +188,7 @@ class PortalService:
             courses=[
                 CourseCard(
                     id=4001,
+                    category="新手入门",
                     level="入门",
                     duration_hours=3.5,
                     lesson_count=6,
@@ -194,6 +201,7 @@ class PortalService:
                 ),
                 CourseCard(
                     id=4002,
+                    category="美股/技术",
                     level="进阶",
                     duration_hours=6.0,
                     lesson_count=10,
@@ -205,6 +213,7 @@ class PortalService:
                 ),
                 CourseCard(
                     id=4003,
+                    category="期权衍生品",
                     level="进阶",
                     duration_hours=5.2,
                     lesson_count=8,
@@ -293,6 +302,7 @@ class PortalService:
             return None
         return CourseDetailResponse(
             id=course.id,
+            category=course.category,
             level=course.level,
             duration_hours=course.duration_hours,
             lesson_count=course.lesson_count,
@@ -307,49 +317,18 @@ class PortalService:
                     id=1,
                     title="第一章 · 建立基础框架",
                     lessons=[
-                        LessonSummary(
-                            id=1,
-                            title="课程导论与研究目标",
-                            duration_minutes=18,
-                            is_preview=True,
-                            learned=True,
-                        ),
-                        LessonSummary(
-                            id=2,
-                            title="核心规则与参与机制",
-                            duration_minutes=32,
-                            learned=True,
-                        ),
-                        LessonSummary(
-                            id=3,
-                            title="信息收集与标的筛选",
-                            duration_minutes=36,
-                            learned=course.progress >= 45,
-                        ),
+                        LessonSummary(id=1, title="课程导论与研究目标", duration_minutes=18, is_preview=True, learned=True),
+                        LessonSummary(id=2, title="核心规则与参与机制", duration_minutes=32, learned=True),
+                        LessonSummary(id=3, title="信息收集与标的筛选", duration_minutes=36, learned=course.progress >= 45),
                     ],
                 ),
                 CourseChapter(
                     id=2,
                     title="第二章 · 风险与实战",
                     lessons=[
-                        LessonSummary(
-                            id=4,
-                            title="定价、回拨与暗盘机制",
-                            duration_minutes=41,
-                            learned=course.progress >= 60,
-                        ),
-                        LessonSummary(
-                            id=5,
-                            title="仓位控制与破发防范",
-                            duration_minutes=38,
-                            learned=course.progress >= 80,
-                        ),
-                        LessonSummary(
-                            id=6,
-                            title="案例复盘与执行清单",
-                            duration_minutes=34,
-                            learned=course.progress >= 100,
-                        ),
+                        LessonSummary(id=4, title="定价、回拨与暗盘机制", duration_minutes=41, learned=course.progress >= 60),
+                        LessonSummary(id=5, title="仓位控制与破发防范", duration_minutes=38, learned=course.progress >= 80),
+                        LessonSummary(id=6, title="案例复盘与执行清单", duration_minutes=34, learned=course.progress >= 100),
                     ],
                 ),
             ],
@@ -371,16 +350,16 @@ class PortalService:
                     code="month",
                     name="月度会员",
                     period_label="连续 30 天",
-                    price=99,
-                    original_price=129,
+                    price=Decimal("99.00"),
+                    original_price=Decimal("129.00"),
                     benefits=["会员专栏", "直播回看"],
                 ),
                 MemberPlan(
                     code="year",
                     name="星球尊享年会员",
                     period_label="连续 365 天",
-                    price=899,
-                    original_price=1188,
+                    price=Decimal("899.00"),
+                    original_price=Decimal("1188.00"),
                     benefits=["全部专栏", "全部直播", "研讨专席"],
                     recommended=True,
                 ),
