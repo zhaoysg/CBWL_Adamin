@@ -80,7 +80,11 @@ async def create_member_plan_controller(
     data: Annotated[MemberPlanCreateSchema, Body(description="会员套餐创建参数")],
 ) -> JSONResponse:
     result = await MemberPlanService(auth, db).create(data)
-    return SuccessResponse(data=result, msg="创建会员套餐成功")
+    return SuccessResponse(
+        data=result,
+        msg="创建会员套餐成功",
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 @MemberPlanRouter.put(
