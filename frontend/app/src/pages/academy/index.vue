@@ -1,636 +1,239 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import AppIcon from "@/components/AppIcon.vue";
-import BottomNav from "@/components/BottomNav.vue";
-import ErrorState from "@/components/ErrorState.vue";
-import LoadingState from "@/components/LoadingState.vue";
-import { portalApi } from "@/api/portal";
-import type { AcademyResponse, CourseCard } from "@/types/portal";
-import { formatCount } from "@/utils/format";
+import { onShow } from "@dcloudio/uni-app";
+import { portalApi } from "../../api/portal";
+import type { AcademyResponse, CourseCard } from "../../types/portal";
+import CwBottomNav from "../../components/portal/CwBottomNav.vue";
+import CwIcon from "../../components/portal/CwIcon.vue";
+import CwPageState from "../../components/portal/CwPageState.vue";
+import { formatCount } from "../../utils/portal-format";
 
-const data = ref<AcademyResponse | null>(null);
+const data = ref<AcademyResponse>();
 const loading = ref(true);
-const errorMessage = ref("");
+const error = ref("");
 const activeCategory = ref("全部");
 
-const filteredCourses = computed(() => {
+const visibleCourses = computed(() => {
   if (!data.value || activeCategory.value === "全部") return data.value?.courses || [];
-  return data.value.courses.filter((course) => course.level.includes(activeCategory.value.replace("新手", "入门")));
+  return data.value.courses.filter((course) => course.level === activeCategory.value.replace("新手", ""));
 });
 
-async function loadData() {
+async function load() {
   loading.value = true;
-  errorMessage.value = "";
+  error.value = "";
   try {
     data.value = await portalApi.academy();
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "未知错误";
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : "网络连接失败";
   } finally {
     loading.value = false;
   }
 }
 
-function openAction(label: string) {
-  uni.showToast({ title: `${label}功能正在接入`, icon: "none" });
-}
-
 function openCourse(course: CourseCard) {
-  uni.showToast({ title: `打开课程：${course.title}`, icon: "none" });
+  uni.navigateTo({ url: `/pages/course/detail?id=${course.id}` });
 }
 
-onMounted(loadData);
+function openLearning() {
+  uni.switchTab({ url: "/pages/mine/index", fail: () => uni.reLaunch({ url: "/pages/mine/index" }) });
+}
+
+function reserveLive(title: string) {
+  uni.showToast({ title: `已记录预约：${title}`, icon: "none" });
+}
+
+onMounted(load);
+onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
 </script>
 
 <template>
-  <view class="page-shell academy-page">
-    <view v-if="data" class="navy-hero academy-hero">
-      <view class="safe-top" />
-      <view class="academy-header">
+  <view class="academy-page">
+    <view class="academy-hero">
+      <view class="academy-head">
         <view class="academy-brand">
-          <view class="academy-logo"><AppIcon name="academy" :size="50" /></view>
-          <view class="academy-copy">
-            <view class="academy-title-line">
+          <view class="academy-logo">⌂</view>
+          <view>
+            <view class="academy-title-row">
               <text class="academy-title">投研学院</text>
-              <text class="academy-kicker">专业投研体系</text>
+              <text class="academy-tag">专业投研体系</text>
             </view>
             <text class="academy-subtitle">10 门体系精品课 · 7 大深度专栏 · 专题研讨直播</text>
           </view>
         </view>
         <view class="academy-actions">
-          <view class="glass-icon-button" @tap="openAction('学院搜索')">
-            <AppIcon name="search" :size="42" />
-          </view>
-          <button class="gold-button learning-button" @tap="openAction('我的学习')">
-            <AppIcon name="book" :size="26" />
-            我的学习
-          </button>
+          <button class="round-action"><CwIcon name="search" :size="40" tone="white" /></button>
+          <button class="learning-button" @tap="openLearning"><CwIcon name="book" :size="27" tone="navy" /><text>我的学习</text></button>
         </view>
       </view>
 
-      <view class="live-heading-row">
-        <view class="live-heading"><text class="live-dot" />专题直播研讨</view>
-        <view class="replay-entry" @tap="openAction('往期回看')">
-          <AppIcon name="play" :size="22" />
-          往期回看库（120+期）
-          <AppIcon name="arrow" :size="28" />
-        </view>
+      <view class="hero-section-title">
+        <view class="live-dot" />
+        <text>专题直播研讨</text>
+        <button class="archive-button"><CwIcon name="live" :size="23" tone="white" /><text>往期回看库（120+期）›</text></button>
       </view>
 
-      <scroll-view scroll-x class="live-scroll" :show-scrollbar="false">
-        <view class="live-card-row">
-          <view v-for="session in data.live_sessions" :key="session.id" class="live-card">
-            <view class="live-meta">
-              <view class="pill"><AppIcon name="clock" :size="20" />{{ session.schedule_text }}</view>
-              <view class="pill member" :class="{ orange: session.access_label.includes('会员') }">
-                {{ session.access_label }}
-              </view>
+      <CwPageState v-if="loading || error" :loading="loading" :error="error" dark @retry="load" />
+      <scroll-view v-else-if="data" class="live-scroll" scroll-x :show-scrollbar="false">
+        <view class="live-list">
+          <article v-for="session in data.live_sessions" :key="session.id" class="live-card">
+            <view class="live-card__meta">
+              <view class="time-badge"><CwIcon name="clock" :size="22" tone="navy" /><text>{{ session.schedule_text }}</text></view>
+              <view class="free-badge" :class="{ 'free-badge--member': session.access_label.includes('会员') }">{{ session.access_label }}</view>
             </view>
-            <text class="live-title">{{ session.title }}</text>
-            <text class="live-subtitle">{{ session.subtitle }}</text>
-            <view class="tag-row">
-              <text v-for="tag in session.tags" :key="tag" class="topic-tag">#{{ tag }}</text>
+            <text class="live-card__title">{{ session.title }}</text>
+            <text class="live-card__subtitle">{{ session.subtitle }}</text>
+            <view class="tag-row"><text v-for="tag in session.tags" :key="tag" class="topic-tag">#{{ tag }}</text></view>
+            <view class="live-card__footer">
+              <text>{{ formatCount(session.reservation_count) }} 人已预约</text>
+              <button class="reserve-button" @tap="reserveLive(session.title)"><CwIcon name="bell" :size="21" tone="orange" /><text>预约直播</text></button>
             </view>
-            <view class="live-footer">
-              <text class="reservation-count">{{ formatCount(session.reservation_count) }} 人已预约</text>
-              <button class="reserve-button" @tap.stop="openAction('直播预约')">♧ 预约直播</button>
-            </view>
-          </view>
+          </article>
         </view>
       </scroll-view>
     </view>
 
-    <view v-if="data" class="academy-body">
-      <view class="section-title-row section-padding">
-        <text class="section-title">星球深度图文专栏</text>
-        <text class="section-link" @tap="openAction('全部专栏')">全 7 专栏 ›</text>
-      </view>
-
-      <scroll-view scroll-x class="column-scroll" :show-scrollbar="false">
-        <view class="column-row">
-          <view
-            v-for="column in data.columns"
-            :key="column.id"
-            class="surface-card column-card"
-            :class="`column-${column.accent}`"
-            @tap="openAction(column.title)"
-          >
-            <view class="column-top">
-              <view class="column-status"><AppIcon name="check" :size="19" />{{ column.status }}</view>
-              <view class="column-access"><AppIcon name="crown" :size="22" />{{ column.access_label }}</view>
-            </view>
-            <text class="column-title">{{ column.title }}</text>
-            <text class="column-summary">{{ column.summary }}</text>
-            <view class="column-footer">
-              <text><AppIcon name="note" :size="22" /> 已更新 {{ column.article_count }} 篇深度长文</text>
-              <text class="column-action">开始阅读 ›</text>
-            </view>
-          </view>
+    <view v-if="data" class="academy-content">
+      <section class="content-section">
+        <view class="section-heading">
+          <view class="section-title"><view class="section-bar" /><text>星球深度图文专栏</text></view>
+          <text class="section-link">全 {{ data.columns.length + 5 }} 专栏 ›</text>
         </view>
-      </scroll-view>
-
-      <view class="section-title-row course-heading section-padding">
-        <text class="section-title">体系化精品课</text>
-        <text class="course-count">共 10 门精选课程</text>
-      </view>
-
-      <scroll-view scroll-x class="course-tab-scroll" :show-scrollbar="false">
-        <view class="course-tabs">
-          <view
-            v-for="category in data.course_categories"
-            :key="category"
-            class="course-tab"
-            :class="{ active: activeCategory === category }"
-            @tap="activeCategory = category"
-          >
-            <text v-if="category === '全部'">✦</text>
-            <text v-else-if="category === '新手入门'">★</text>
-            <text v-else>⌁</text>
-            {{ category }}
-          </view>
-        </view>
-      </scroll-view>
-
-      <view class="course-list">
-        <view
-          v-for="course in filteredCourses"
-          :key="course.id"
-          class="surface-card course-card"
-          @tap="openCourse(course)"
-        >
-          <view class="course-accent" />
-          <view class="course-main">
-            <view class="course-meta-row">
-              <view class="course-meta-left">
-                <view class="course-icon">＄</view>
-                <view class="pill member">{{ course.level }}</view>
-                <text class="course-duration">{{ course.duration_hours }}小时 · {{ course.lesson_count }}讲</text>
+        <scroll-view class="column-scroll" scroll-x :show-scrollbar="false">
+          <view class="column-list">
+            <article v-for="column in data.columns" :key="column.id" class="column-card" :class="`column-card--${column.accent}`">
+              <view class="column-card__top">
+                <text class="column-status"><CwIcon name="check" :size="19" tone="green" />{{ column.status }}</text>
+                <text class="column-access"><CwIcon name="crown" :size="22" tone="gold" />{{ column.access_label }}</text>
               </view>
-              <view v-if="course.badge" class="hot-badge">♨ {{ course.badge }}</view>
+              <text class="column-title">{{ column.title }}</text>
+              <text class="column-summary">{{ column.summary }}</text>
+              <view class="column-footer"><text>▤ 已更新 {{ column.article_count }} 篇深度长文</text><text class="start-link">开始阅读 ›</text></view>
+            </article>
+          </view>
+        </scroll-view>
+      </section>
+
+      <section class="content-section course-section">
+        <view class="section-heading">
+          <view class="section-title"><view class="section-bar" /><text>体系化精品课</text></view>
+          <text class="section-count">共 10 门精选课程</text>
+        </view>
+
+        <scroll-view class="course-filter-scroll" scroll-x :show-scrollbar="false">
+          <view class="course-filter-list">
+            <button
+              v-for="category in data.course_categories"
+              :key="category"
+              class="course-filter"
+              :class="{ 'course-filter--active': activeCategory === category }"
+              @tap="activeCategory = category"
+            >{{ category === '全部' ? '✦ 全部' : category }}</button>
+          </view>
+        </scroll-view>
+
+        <view class="course-list">
+          <article v-for="course in visibleCourses" :key="course.id" class="course-card" @tap="openCourse(course)">
+            <view class="course-topline">
+              <view class="course-kind-icon"><CwIcon name="book" :size="30" tone="green" /></view>
+              <text class="level-badge">{{ course.level }}</text>
+              <text class="course-duration">{{ course.duration_hours }}小时 · {{ course.lesson_count }}讲</text>
+              <text v-if="course.badge" class="hot-badge">● {{ course.badge }}</text>
             </view>
             <text class="course-title">{{ course.title }}</text>
             <text class="course-summary">{{ course.summary }}</text>
-            <view class="course-tags">
-              <text v-for="tag in course.tags" :key="tag" class="course-tag">{{ tag }}</text>
-            </view>
+            <view class="course-tags"><text v-for="tag in course.tags" :key="tag">{{ tag }}</text></view>
             <view class="course-footer">
               <text class="course-price">{{ course.price_label }}</text>
-              <text class="course-cta">立即实战 ›</text>
+              <view v-if="course.progress" class="mini-progress"><view class="mini-progress__bar" :style="{ width: `${course.progress}%` }" /></view>
+              <text class="course-action">进入课程 ›</text>
             </view>
-          </view>
+          </article>
+          <view v-if="!visibleCourses.length" class="empty-course">该分类课程正在筹备中</view>
         </view>
-      </view>
+      </section>
     </view>
 
-    <LoadingState v-if="loading" />
-    <ErrorState v-else-if="errorMessage" :message="errorMessage" @retry="loadData" />
-    <BottomNav active="academy" />
+    <CwBottomNav active="academy" />
   </view>
 </template>
 
 <style scoped lang="scss">
+.academy-page { min-height: 100vh; padding-bottom: 170rpx; background: #f5f7fa; }
 .academy-hero {
-  padding-bottom: 48rpx;
-}
-
-.academy-header,
-.academy-brand,
-.academy-title-line,
-.academy-actions,
-.live-heading-row,
-.live-heading,
-.replay-entry,
-.live-meta,
-.live-footer,
-.column-top,
-.column-footer,
-.course-meta-row,
-.course-meta-left,
-.course-footer {
-  display: flex;
-  align-items: center;
-}
-
-.academy-header,
-.live-heading-row,
-.live-meta,
-.live-footer,
-.column-top,
-.column-footer,
-.course-meta-row,
-.course-footer {
-  justify-content: space-between;
-}
-
-.academy-header {
-  position: relative;
-  z-index: 2;
-  padding: 32rpx 30rpx 0;
-  gap: 20rpx;
-}
-
-.academy-brand {
-  min-width: 0;
-  flex: 1;
-  gap: 18rpx;
-}
-
-.academy-logo {
-  display: flex;
-  width: 78rpx;
-  height: 78rpx;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border: 2rpx solid rgba(255, 159, 45, 0.7);
-  border-radius: 20rpx;
-  color: #ffa333;
-  background: rgba(4, 20, 39, 0.48);
-}
-
-.academy-copy {
-  min-width: 0;
-}
-
-.academy-title-line {
-  gap: 12rpx;
-}
-
-.academy-title {
-  font-size: 36rpx;
-  font-weight: 900;
-}
-
-.academy-kicker {
-  padding: 5rpx 10rpx;
-  border-radius: 8rpx;
-  color: #ff9b29;
-  background: rgba(255, 148, 29, 0.12);
-  font-size: 18rpx;
-  font-weight: 800;
-}
-
-.academy-subtitle {
-  display: block;
-  max-width: 390rpx;
-  margin-top: 8rpx;
+  padding: calc(var(--status-bar-height) + 34rpx) 0 45rpx;
+  color: #ffffff;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 22rpx;
-  line-height: 1.5;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background:
+    radial-gradient(circle at 95% 5%, rgba(42, 93, 139, 0.34), transparent 34%),
+    linear-gradient(145deg, #031a34, #06294b 62%, #0b3c66);
 }
-
-.academy-actions {
-  flex: 0 0 auto;
-  gap: 12rpx;
-}
-
-.learning-button {
-  height: 66rpx;
-  padding: 0 22rpx;
-  font-size: 23rpx;
-}
-
-.live-heading-row {
-  position: relative;
-  z-index: 2;
-  margin-top: 42rpx;
-  padding: 0 30rpx;
-  gap: 16rpx;
-}
-
-.live-heading {
-  gap: 12rpx;
-  font-size: 30rpx;
-  font-weight: 900;
-}
-
-.live-dot {
-  width: 13rpx;
-  height: 13rpx;
-  border: 3rpx solid rgba(255, 255, 255, 0.55);
-  border-radius: 50%;
-  background: #ff5159;
-}
-
-.replay-entry {
-  height: 50rpx;
-  padding: 0 16rpx;
-  gap: 8rpx;
-  border: 1rpx solid rgba(255, 255, 255, 0.22);
-  border-radius: 28rpx;
-  color: rgba(255, 255, 255, 0.86);
-  background: rgba(255, 255, 255, 0.1);
-  font-size: 20rpx;
-  font-weight: 700;
-}
-
-.live-scroll {
-  position: relative;
-  z-index: 2;
-  margin-top: 24rpx;
-}
-
-.live-card-row {
-  display: inline-flex;
-  padding: 0 30rpx 12rpx;
-  gap: 20rpx;
-}
-
-.live-card {
-  display: inline-flex;
-  width: 530rpx;
-  min-height: 336rpx;
-  padding: 26rpx;
-  flex-direction: column;
-  border-radius: 26rpx;
-  color: #151a22;
-  background: #fff;
-  box-shadow: 0 14rpx 34rpx rgba(1, 14, 31, 0.2);
-  white-space: normal;
-}
-
-.live-title,
-.live-subtitle,
-.column-title,
-.column-summary,
-.course-title,
-.course-summary {
-  display: block;
-}
-
-.live-title {
-  margin-top: 20rpx;
-  font-size: 31rpx;
-  font-weight: 900;
-  line-height: 1.45;
-}
-
-.live-subtitle {
-  margin-top: 10rpx;
-  color: #7b838d;
-  font-size: 22rpx;
-  line-height: 1.6;
-}
-
-.tag-row {
-  display: flex;
-  margin-top: 20rpx;
-  flex-wrap: wrap;
-  gap: 10rpx;
-}
-
-.topic-tag {
-  color: #315876;
-  background: #f2f6f9;
-  font-size: 20rpx;
-}
-
-.live-footer {
-  margin-top: auto;
-  padding-top: 18rpx;
-  border-top: 1rpx solid #e6e9ed;
-}
-
-.reservation-count {
-  color: #737c88;
-  font-size: 22rpx;
-}
-
-.reserve-button {
-  height: 56rpx;
-  padding: 0 18rpx;
-  border: none;
-  border-radius: 30rpx;
-  color: #a25d10;
-  background: #fff0df;
-  font-size: 22rpx;
-  font-weight: 800;
-}
-
-.academy-body {
-  padding-bottom: 38rpx;
-}
-
-.section-padding {
-  padding: 38rpx 30rpx 18rpx;
-}
-
-.column-row {
-  display: inline-flex;
-  padding: 0 30rpx 16rpx;
-  gap: 20rpx;
-}
-
-.column-card {
-  position: relative;
-  display: inline-flex;
-  width: 530rpx;
-  min-height: 300rpx;
-  padding: 26rpx 26rpx 24rpx 34rpx;
-  flex-direction: column;
-  overflow: hidden;
-  white-space: normal;
-
-  &::before {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 8rpx;
-    content: "";
-  }
-}
-
-.column-cyan::before { background: #2cc5d5; }
-.column-orange::before { background: #ff9b32; }
-
-.column-status {
-  display: flex;
-  align-items: center;
-  gap: 7rpx;
-  color: #31a987;
-  font-size: 20rpx;
-  font-weight: 800;
-}
-
-.column-orange .column-status { color: #ed8c2b; }
-
-.column-access {
-  display: flex;
-  align-items: center;
-  gap: 6rpx;
-  color: #8c5b12;
-  font-size: 19rpx;
-  font-weight: 800;
-}
-
-.column-title {
-  margin-top: 24rpx;
-  font-size: 31rpx;
-  font-weight: 900;
-}
-
-.column-summary {
-  margin-top: 10rpx;
-  color: #747d88;
-  font-size: 23rpx;
-  line-height: 1.65;
-}
-
-.column-footer {
-  margin-top: auto;
-  padding-top: 22rpx;
-  color: #78818d;
-  font-size: 20rpx;
-}
-
-.column-action {
-  color: #073b68;
-  font-weight: 900;
-}
-
-.course-heading {
-  padding-bottom: 16rpx;
-}
-
-.course-count {
-  color: #878f99;
-  font-size: 22rpx;
-}
-
-.course-tabs {
-  display: inline-flex;
-  padding: 0 30rpx 12rpx;
-  gap: 12rpx;
-}
-
-.course-tab {
-  display: flex;
-  height: 54rpx;
-  padding: 0 22rpx;
-  align-items: center;
-  gap: 8rpx;
-  border: 1rpx solid #e1e6eb;
-  border-radius: 30rpx;
-  color: #252a31;
-  background: #fff;
-  font-size: 22rpx;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.course-tab.active {
-  border-color: #052f58;
-  color: #fff;
-  background: #052f58;
-}
-
-.course-list {
-  padding: 4rpx 30rpx 24rpx;
-}
-
-.course-card {
-  position: relative;
-  margin-top: 20rpx;
-  overflow: hidden;
-}
-
-.course-accent {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 7rpx;
-  background: #3bd3ab;
-}
-
-.course-main {
-  padding: 28rpx 28rpx 26rpx 34rpx;
-}
-
-.course-meta-row {
-  gap: 16rpx;
-}
-
-.course-meta-left {
-  min-width: 0;
-  gap: 10rpx;
-}
-
-.course-icon {
-  display: flex;
-  width: 44rpx;
-  height: 44rpx;
-  align-items: center;
-  justify-content: center;
-  border-radius: 14rpx;
-  color: #fff;
-  background: #38c49c;
-  font-size: 23rpx;
-  font-weight: 900;
-}
-
-.course-duration {
-  color: #7d858f;
-  font-size: 21rpx;
-  white-space: nowrap;
-}
-
-.hot-badge {
-  flex: 0 0 auto;
-  padding: 5rpx 12rpx;
-  border-radius: 8rpx;
-  color: #fff;
-  background: #ed6908;
-  font-size: 19rpx;
-  font-weight: 800;
-}
-
-.course-title {
-  margin-top: 26rpx;
-  font-size: 32rpx;
-  font-weight: 900;
-}
-
-.course-summary {
-  margin-top: 10rpx;
-  color: #7a828d;
-  font-size: 23rpx;
-  line-height: 1.65;
-}
-
-.course-tags {
-  display: flex;
-  margin-top: 22rpx;
-  flex-wrap: wrap;
-  gap: 10rpx;
-}
-
-.course-tag {
-  padding: 6rpx 12rpx;
-  border-radius: 7rpx;
-  color: #315a78;
-  background: #f0f5f8;
-  font-size: 19rpx;
-}
-
-.course-footer {
-  margin-top: 22rpx;
-  padding-top: 18rpx;
-  border-top: 1rpx solid #e5e9ed;
-}
-
-.course-price {
-  color: #42bd98;
-  font-size: 25rpx;
-  font-weight: 900;
-}
-
-.course-cta {
-  color: #073a65;
-  font-size: 22rpx;
-  font-weight: 900;
-}
+.academy-head { display: flex; align-items: center; justify-content: space-between; gap: 18rpx; padding: 0 30rpx; }
+.academy-brand { display: flex; align-items: center; gap: 16rpx; min-width: 0; }
+.academy-logo { display: flex; align-items: center; justify-content: center; width: 74rpx; height: 74rpx; color: #ffa32a; font-size: 40rpx; font-weight: 900; border: 2rpx solid rgba(255, 157, 39, 0.65); border-radius: 19rpx; }
+.academy-title-row { display: flex; align-items: center; gap: 12rpx; }
+.academy-title { font-size: 38rpx; font-weight: 900; }
+.academy-tag { padding: 5rpx 9rpx; color: #f3a638; font-size: 17rpx; font-weight: 800; background: rgba(255, 156, 31, 0.12); border-radius: 5rpx; }
+.academy-subtitle { display: block; max-width: 420rpx; margin-top: 7rpx; overflow: hidden; color: rgba(255,255,255,.68); font-size: 21rpx; white-space: nowrap; text-overflow: ellipsis; }
+.academy-actions { display: flex; align-items: center; gap: 12rpx; }
+.round-action { display: flex; align-items: center; justify-content: center; width: 70rpx; height: 70rpx; margin: 0; padding: 0; background: rgba(255,255,255,.08); border: 1rpx solid rgba(255,255,255,.14); border-radius: 50%; }
+.round-action::after, .learning-button::after, .archive-button::after, .reserve-button::after, .course-filter::after { border: 0; }
+.learning-button { display: flex; align-items: center; gap: 8rpx; margin: 0; padding: 18rpx 20rpx; color: #102942; font-size: 21rpx; font-weight: 900; line-height: 1; background: linear-gradient(105deg,#ffdc48,#ff9a1c); border: 0; border-radius: 34rpx; }
+.hero-section-title { display: flex; align-items: center; gap: 13rpx; margin: 38rpx 30rpx 22rpx; font-size: 30rpx; font-weight: 900; }
+.live-dot { width: 13rpx; height: 13rpx; background: #ff4f55; border: 4rpx solid rgba(255,255,255,.14); border-radius: 50%; }
+.archive-button { display: flex; align-items: center; gap: 8rpx; margin: 0 0 0 auto; padding: 10rpx 16rpx; color: rgba(255,255,255,.82); font-size: 19rpx; line-height: 1; background: rgba(255,255,255,.08); border: 1rpx solid rgba(255,255,255,.14); border-radius: 25rpx; }
+.live-scroll { width: 100%; white-space: nowrap; }
+.live-list { display: inline-flex; gap: 20rpx; padding: 0 30rpx 8rpx; }
+.live-card { display: flex; flex-direction: column; width: 500rpx; min-height: 290rpx; padding: 26rpx; color: #151b22; white-space: normal; background: #ffffff; border-radius: 24rpx; box-shadow: 0 14rpx 32rpx rgba(0,0,0,.14); box-sizing: border-box; }
+.live-card__meta, .column-card__top, .course-topline, .course-footer, .live-card__footer { display: flex; align-items: center; }
+.live-card__meta { justify-content: space-between; gap: 12rpx; }
+.time-badge, .free-badge { display: inline-flex; align-items: center; gap: 5rpx; padding: 7rpx 11rpx; color: #315575; font-size: 19rpx; font-weight: 700; background: #edf4f9; border-radius: 7rpx; }
+.free-badge { color: #259078; background: #e7faf4; }
+.free-badge--member { color: #aa7621; background: #fff3da; }
+.live-card__title { display: block; margin-top: 20rpx; font-size: 31rpx; font-weight: 900; line-height: 1.45; }
+.live-card__subtitle { display: -webkit-box; margin-top: 10rpx; overflow: hidden; color: #7d858f; font-size: 22rpx; line-height: 1.55; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 9rpx; margin-top: 16rpx; }
+.topic-tag { padding: 5rpx 10rpx; color: #315575; font-size: 18rpx; background: #f1f5f8; border-radius: 5rpx; }
+.live-card__footer { justify-content: space-between; gap: 12rpx; margin-top: auto; padding-top: 18rpx; color: #858c95; font-size: 21rpx; border-top: 1rpx solid #e7eaed; }
+.reserve-button { display: flex; align-items: center; gap: 6rpx; margin: 0; padding: 10rpx 15rpx; color: #a66a1e; font-size: 20rpx; font-weight: 800; line-height: 1; background: #fff3e4; border: 0; border-radius: 24rpx; }
+.academy-content { background: #f5f7fa; }
+.content-section { padding: 40rpx 0 10rpx; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; padding: 0 30rpx; }
+.section-title { display: flex; align-items: center; gap: 14rpx; color: #141b22; font-size: 32rpx; font-weight: 900; }
+.section-bar { width: 6rpx; height: 42rpx; background: #0b4e82; border-radius: 5rpx; }
+.section-link { color: #234f72; font-size: 22rpx; font-weight: 700; }
+.section-count { color: #8a929b; font-size: 21rpx; }
+.column-scroll { width: 100%; margin-top: 24rpx; white-space: nowrap; }
+.column-list { display: inline-flex; gap: 20rpx; padding: 0 30rpx 12rpx; }
+.column-card { position: relative; display: flex; flex-direction: column; width: 520rpx; min-height: 285rpx; padding: 25rpx 25rpx 22rpx 31rpx; overflow: hidden; white-space: normal; background: #ffffff; border: 1rpx solid #e6e9ed; border-radius: 22rpx; box-shadow: 0 10rpx 24rpx rgba(8,39,70,.06); box-sizing: border-box; }
+.column-card::before { position: absolute; top: 0; bottom: 0; left: 0; width: 6rpx; content: ""; background: #19b7ce; }
+.column-card--orange::before { background: #ff9d2f; }
+.column-card__top { justify-content: space-between; gap: 10rpx; }
+.column-status, .column-access { display: inline-flex; align-items: center; gap: 5rpx; color: #25967e; font-size: 19rpx; font-weight: 700; }
+.column-access { color: #9b721f; }
+.column-title { display: block; margin-top: 19rpx; color: #131a21; font-size: 32rpx; font-weight: 900; }
+.column-summary { display: -webkit-box; margin-top: 10rpx; overflow: hidden; color: #737c87; font-size: 23rpx; line-height: 1.65; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.column-footer { display: flex; align-items: center; justify-content: space-between; gap: 12rpx; margin-top: auto; padding-top: 18rpx; color: #7e8791; font-size: 20rpx; border-top: 1rpx solid #eceef0; }
+.start-link { color: #174a75; font-weight: 900; }
+.course-section { padding-bottom: 20rpx; }
+.course-filter-scroll { width: 100%; margin-top: 24rpx; white-space: nowrap; }
+.course-filter-list { display: inline-flex; gap: 12rpx; padding: 0 30rpx 10rpx; }
+.course-filter { flex: 0 0 auto; margin: 0; padding: 14rpx 21rpx; color: #26313b; font-size: 21rpx; font-weight: 700; line-height: 1; background: #ffffff; border: 1rpx solid #e4e7ea; border-radius: 29rpx; }
+.course-filter--active { color: #ffffff; background: #082f57; border-color: #082f57; }
+.course-list { padding: 12rpx 30rpx 20rpx; }
+.course-card { margin-bottom: 22rpx; padding: 27rpx 27rpx 24rpx; background: #ffffff; border: 1rpx solid #e5e8ec; border-radius: 24rpx; box-shadow: 0 12rpx 28rpx rgba(8,39,70,.055); }
+.course-topline { gap: 10rpx; }
+.course-kind-icon { display: flex; align-items: center; justify-content: center; width: 45rpx; height: 45rpx; background: #e9faf4; border-radius: 12rpx; }
+.level-badge { padding: 5rpx 10rpx; color: #27886f; font-size: 18rpx; background: #e7f9f2; border-radius: 5rpx; }
+.course-duration { color: #7d858e; font-size: 21rpx; }
+.hot-badge { margin-left: auto; padding: 5rpx 10rpx; color: #ffffff; font-size: 18rpx; font-weight: 800; background: #ef6509; border-radius: 5rpx; }
+.course-title { display: block; margin-top: 20rpx; color: #111820; font-size: 34rpx; font-weight: 900; }
+.course-summary { display: block; margin-top: 11rpx; color: #7c848d; font-size: 24rpx; line-height: 1.65; }
+.course-tags { display: flex; flex-wrap: wrap; gap: 10rpx; margin-top: 20rpx; }
+.course-tags text { padding: 7rpx 12rpx; color: #315575; font-size: 19rpx; background: #f1f5f8; border-radius: 6rpx; }
+.course-footer { gap: 14rpx; margin-top: 22rpx; padding-top: 18rpx; border-top: 1rpx solid #eceef1; }
+.course-price { color: #33b991; font-size: 26rpx; font-weight: 900; }
+.course-action { margin-left: auto; color: #164b77; font-size: 22rpx; font-weight: 900; }
+.mini-progress { width: 130rpx; height: 7rpx; overflow: hidden; background: #edf0f2; border-radius: 7rpx; }
+.mini-progress__bar { height: 100%; background: linear-gradient(90deg,#ffad29,#ff711c); border-radius: inherit; }
+.empty-course { padding: 60rpx; color: #87919c; text-align: center; background: #ffffff; border-radius: 22rpx; }
 </style>
