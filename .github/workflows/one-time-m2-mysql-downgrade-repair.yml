@@ -1,0 +1,55 @@
+name: One-time M2 MySQL downgrade repair
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - ".github/workflows/one-time-m2-mysql-downgrade-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-membership
+          fetch-depth: 0
+
+      - name: Make downgrade portable across databases
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py")
+          text = path.read_text(encoding="utf-8")
+          marker = "def downgrade() -> None:\n"
+          if text.count(marker) != 1:
+              raise RuntimeError("unexpected downgrade function count")
+          prefix, _ = text.split(marker, 1)
+          downgrade = '''def downgrade() -> None:
+              # Drop child tables before parents. Database engines remove each table's
+              # indexes and foreign-key constraints atomically with the table itself.
+              # Explicitly dropping FK-supporting indexes first is invalid on MySQL.
+              op.drop_table("cw_content_plan")
+              op.drop_table("cw_content")
+              op.drop_table("cw_content_category")
+              op.drop_table("cw_member_plan")
+          '''
+          path.write_text(prefix + downgrade, encoding="utf-8")
+          PY
+
+      - name: Validate and commit
+        run: |
+          git diff --check
+          python -m compileall -q backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          git commit -m "fix(db): make M2 downgrade portable on MySQL"
+          git push origin HEAD:feature/caibuwailu-m2-membership
