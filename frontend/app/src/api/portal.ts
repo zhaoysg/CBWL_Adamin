@@ -41,7 +41,7 @@ function unwrap<T>(payload: T | ApiEnvelope<T>): T {
 function request<T>(path: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const token = uni.getStorageSync("access_token");
-    uni.request<T | ApiEnvelope<T>>({
+    uni.request({
       url: `${API_BASE}${path}`,
       method: "GET",
       timeout: TIMEOUT,
@@ -49,7 +49,7 @@ function request<T>(path: string): Promise<T> {
         Accept: "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      success: (response) => {
+      success: (response: UniApp.RequestSuccessCallbackResult) => {
         const statusCode = response.statusCode || 0;
         if (statusCode === 401) {
           uni.removeStorageSync("access_token");
@@ -61,12 +61,13 @@ function request<T>(path: string): Promise<T> {
           return;
         }
         try {
-          resolve(unwrap(response.data));
+          resolve(unwrap(response.data as T | ApiEnvelope<T>));
         } catch (error) {
           reject(error);
         }
       },
-      fail: (error) => reject(new Error(error.errMsg || "网络连接失败")),
+      fail: (error: UniApp.GeneralCallbackResult) =>
+        reject(new Error(error.errMsg || "网络连接失败")),
     });
   });
 }
