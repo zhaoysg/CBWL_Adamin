@@ -1,0 +1,59 @@
+name: 财不外露 M2 临时格式化快照
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - ".github/workflows/caibuwailu-m2-format-snapshot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format-snapshot:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Format M2 backend files
+        run: >-
+          uv run ruff format
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          tests/test_api_module_content.py
+          app/init_app.py
+
+      - name: Package formatted files
+        run: |
+          tar -czf /tmp/caibuwailu-m2-formatted.tar.gz \
+            app/api/v1/module_content \
+            app/api/v1/module_membership \
+            app/alembic/versions/20260822_01_caibuwailu_content_admin.py \
+            tests/test_api_module_content.py \
+            app/init_app.py
+
+      - name: Upload formatted files
+        uses: actions/upload-artifact@v4
+        with:
+          name: caibuwailu-m2-formatted
+          path: /tmp/caibuwailu-m2-formatted.tar.gz
+          if-no-files-found: error
+          retention-days: 1
