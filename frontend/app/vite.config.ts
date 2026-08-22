@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { fileURLToPath, URL } from "node:url";
-import { defineConfig, type PluginOption } from "vite";
+import { defineConfig, loadEnv, type PluginOption } from "vite";
 
 const require = createRequire(import.meta.url);
 type UniPluginFactory = () => PluginOption[];
@@ -21,21 +21,39 @@ function resolveUniPluginFactory(moduleValue: unknown): UniPluginFactory {
 
 const uni = resolveUniPluginFactory(require("@dcloudio/vite-plugin-uni"));
 
-export default defineConfig({
-  plugins: [uni()],
-  resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
-  },
-  server: {
-    host: "0.0.0.0",
-    port: 5174,
-    proxy: {
-      "/api": {
-        target: "http://127.0.0.1:8001",
-        changeOrigin: true,
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "");
+  const useMock = env.VITE_USE_MOCK === "true";
+  const apiBase = (env.VITE_API_BASE_URL || "").trim();
+  const platform = process.env.UNI_PLATFORM || "h5";
+
+  if (mode === "production" && useMock) {
+    throw new Error("生产构建禁止 VITE_USE_MOCK=true");
+  }
+  if (mode === "production" && platform.startsWith("app") && !/^https:\/\//i.test(apiBase)) {
+    throw new Error("APP 生产构建必须配置 HTTPS 绝对 API 地址");
+  }
+
+  return {
+    plugins: [uni()],
+    resolve: {
+      alias: {
+        "@": fileURLToPath(new URL("./src", import.meta.url)),
       },
     },
-  },
+    build: {
+      sourcemap: false,
+      target: "es2018",
+    },
+    server: {
+      host: "0.0.0.0",
+      port: 5174,
+      proxy: {
+        "/api": {
+          target: "http://127.0.0.1:8001",
+          changeOrigin: true,
+        },
+      },
+    },
+  };
 });
