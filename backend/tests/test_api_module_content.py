@@ -128,11 +128,7 @@ def test_membership_category_and_content_workflow(
             "slug": f"global-liquidity-{suffix}",
             "summary": "测试投研内容工作流",
             "cover_url": "/static/upload/demo.png",
-            "body": (
-                '<p onclick="alert(1)">安全正文</p>'
-                '<script>alert(2)</script>'
-                '<a href="javascript:alert(3)">危险链接</a>'
-            ),
+            "body": ('<p onclick="alert(1)">安全正文</p><script>alert(2)</script><a href="javascript:alert(3)">危险链接</a>'),
             "body_format": "html",
             "author_name": "若琪",
             "access_level": "premium",

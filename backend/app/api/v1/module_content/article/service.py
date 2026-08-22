@@ -250,7 +250,9 @@ class ContentService:
                 status_code=RET.BAD_REQUEST.code,
             )
         count = await self.db.scalar(
-            select(func.count()).select_from(MemberPlanModel).where(
+            select(func.count())
+            .select_from(MemberPlanModel)
+            .where(
                 MemberPlanModel.id.in_(plan_ids),
                 MemberPlanModel.status == 0,
                 MemberPlanModel.is_deleted.is_(False),

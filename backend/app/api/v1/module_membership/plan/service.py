@@ -98,9 +98,7 @@ class MemberPlanService:
         # 延迟导入，避免会员与内容模型在模块初始化阶段形成循环依赖。
         from app.api.v1.module_content.article.model import ContentPlanModel
 
-        association_count = await self.db.scalar(
-            select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids))
-        )
+        association_count = await self.db.scalar(select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids)))
         if association_count:
             raise CustomException(
                 msg="套餐仍被内容权限或历史内容引用，请停用而不是删除",
@@ -114,7 +112,9 @@ class MemberPlanService:
         if not unique_ids:
             raise CustomException(msg="请选择需要修改状态的会员套餐", status_code=RET.BAD_REQUEST.code)
         count = await self.db.scalar(
-            select(func.count()).select_from(MemberPlanModel).where(
+            select(func.count())
+            .select_from(MemberPlanModel)
+            .where(
                 MemberPlanModel.id.in_(unique_ids),
                 MemberPlanModel.is_deleted.is_(False),
             )

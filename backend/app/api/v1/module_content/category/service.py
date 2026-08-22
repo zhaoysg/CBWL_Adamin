@@ -105,7 +105,9 @@ class ContentCategoryService:
             raise CustomException(msg="请选择需要删除的内容分类", status_code=RET.BAD_REQUEST.code)
 
         existing_count = await self.db.scalar(
-            select(func.count()).select_from(ContentCategoryModel).where(
+            select(func.count())
+            .select_from(ContentCategoryModel)
+            .where(
                 ContentCategoryModel.id.in_(unique_ids),
                 ContentCategoryModel.is_deleted.is_(False),
             )
@@ -114,7 +116,9 @@ class ContentCategoryService:
             raise CustomException(msg="部分内容分类不存在", status_code=RET.NOT_FOUND.code)
 
         external_child_count = await self.db.scalar(
-            select(func.count()).select_from(ContentCategoryModel).where(
+            select(func.count())
+            .select_from(ContentCategoryModel)
+            .where(
                 ContentCategoryModel.parent_id.in_(unique_ids),
                 ContentCategoryModel.id.not_in(unique_ids),
                 ContentCategoryModel.is_deleted.is_(False),
@@ -130,7 +134,9 @@ class ContentCategoryService:
         from app.api.v1.module_content.article.model import ContentModel
 
         content_count = await self.db.scalar(
-            select(func.count()).select_from(ContentModel).where(
+            select(func.count())
+            .select_from(ContentModel)
+            .where(
                 ContentModel.category_id.in_(unique_ids),
                 ContentModel.is_deleted.is_(False),
             )
@@ -163,15 +169,13 @@ class ContentCategoryService:
         categories: list[ContentCategoryModel],
         selected_ids: list[int],
     ) -> None:
-        parent_ids = {
-            item.parent_id
-            for item in categories
-            if item.parent_id is not None and item.parent_id not in selected_ids
-        }
+        parent_ids = {item.parent_id for item in categories if item.parent_id is not None and item.parent_id not in selected_ids}
         if not parent_ids:
             return
         disabled_parent_count = await self.db.scalar(
-            select(func.count()).select_from(ContentCategoryModel).where(
+            select(func.count())
+            .select_from(ContentCategoryModel)
+            .where(
                 ContentCategoryModel.id.in_(parent_ids),
                 or_(ContentCategoryModel.status != 0, ContentCategoryModel.is_deleted.is_(True)),
             )
@@ -201,11 +205,7 @@ class ContentCategoryService:
                     stack.append(child_id)
 
         selected = set(selected_ids)
-        active_outside = [
-            by_id[item_id].category_name
-            for item_id in descendants - selected
-            if by_id[item_id].status == 0
-        ]
+        active_outside = [by_id[item_id].category_name for item_id in descendants - selected if by_id[item_id].status == 0]
         if active_outside:
             raise CustomException(
                 msg="存在未同时停用的子分类，不能停用父分类",
@@ -216,7 +216,9 @@ class ContentCategoryService:
         from app.api.v1.module_content.article.model import ContentModel
 
         published_count = await self.db.scalar(
-            select(func.count()).select_from(ContentModel).where(
+            select(func.count())
+            .select_from(ContentModel)
+            .where(
                 ContentModel.category_id.in_(selected_ids),
                 ContentModel.status == 1,
                 ContentModel.is_deleted.is_(False),
@@ -273,11 +275,7 @@ class ContentCategoryService:
         parent_id: int | None,
         exclude_id: int | None = None,
     ) -> None:
-        parent_condition = (
-            ContentCategoryModel.parent_id.is_(None)
-            if parent_id is None
-            else ContentCategoryModel.parent_id == parent_id
-        )
+        parent_condition = ContentCategoryModel.parent_id.is_(None) if parent_id is None else ContentCategoryModel.parent_id == parent_id
         conditions = [
             ContentCategoryModel.is_deleted.is_(False),
             or_(
