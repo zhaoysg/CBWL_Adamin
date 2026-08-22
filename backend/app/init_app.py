@@ -97,6 +97,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(portal_router)
 
     from app.core.discover import dynamic_router
+
     dynamic_router.init_app(app)
 
 
