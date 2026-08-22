@@ -189,34 +189,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_cw_content_plan_plan", table_name="cw_content_plan")
+    # Drop child tables before parents. Database engines remove each table's
+    # indexes and foreign-key constraints atomically with the table itself.
+    # Explicitly dropping FK-supporting indexes first is invalid on MySQL.
     op.drop_table("cw_content_plan")
-
-    op.drop_index("ix_cw_content_deleted_id", table_name="cw_content")
-    op.drop_index("ix_cw_content_updated_id", table_name="cw_content")
-    op.drop_index("ix_cw_content_created_id", table_name="cw_content")
-    op.drop_index("ix_cw_content_created_time", table_name="cw_content")
-    op.drop_index("ix_cw_content_is_deleted", table_name="cw_content")
-    op.drop_index("ix_cw_content_published_at", table_name="cw_content")
-    op.drop_index("ix_cw_content_title", table_name="cw_content")
-    op.drop_index("ix_cw_content_category_feed", table_name="cw_content")
-    op.drop_index("ix_cw_content_public_feed", table_name="cw_content")
-    op.drop_index("ix_cw_content_admin_list", table_name="cw_content")
     op.drop_table("cw_content")
-
-    op.drop_index("ix_cw_content_category_deleted_id", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_updated_id", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_created_id", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_created_time", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_is_deleted", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_name", table_name="cw_content_category")
-    op.drop_index("ix_cw_content_category_parent_sort", table_name="cw_content_category")
     op.drop_table("cw_content_category")
-
-    op.drop_index("ix_cw_member_plan_deleted_id", table_name="cw_member_plan")
-    op.drop_index("ix_cw_member_plan_updated_id", table_name="cw_member_plan")
-    op.drop_index("ix_cw_member_plan_created_id", table_name="cw_member_plan")
-    op.drop_index("ix_cw_member_plan_created_time", table_name="cw_member_plan")
-    op.drop_index("ix_cw_member_plan_is_deleted", table_name="cw_member_plan")
-    op.drop_index("ix_cw_member_plan_enabled_sort", table_name="cw_member_plan")
     op.drop_table("cw_member_plan")
