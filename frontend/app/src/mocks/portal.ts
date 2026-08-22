@@ -1,4 +1,11 @@
-import type { AcademyResponse, HomeResponse, ProfileResponse } from "@/types/portal";
+import type {
+  AcademyResponse,
+  ContentDetailResponse,
+  CourseDetailResponse,
+  HomeResponse,
+  MemberCenterResponse,
+  ProfileResponse,
+} from "@/types/portal";
 
 const member = {
   id: 842,
@@ -68,7 +75,7 @@ export const mockHome: HomeResponse = {
     },
     {
       id: 1002,
-      category: "机构调仓",
+      category: "机构观点",
       content_type: "institution",
       title: "追踪头部机构调仓，观察市场偏好与行业配置方向",
       summary:
@@ -150,7 +157,7 @@ export const mockAcademy: AcademyResponse = {
       title: "港股打新公开课",
       summary: "零基础掌握港股打新全流程、中签机制与回拨风控策略。",
       tags: ["规则流程", "中签与回拨", "费用与风险", "破发防范"],
-      price_label: "免费 / ¥99",
+      price_label: "免费",
       badge: "热选",
       progress: 68,
     },
@@ -165,6 +172,18 @@ export const mockAcademy: AcademyResponse = {
       price_label: "会员免费",
       badge: "进阶",
       progress: 20,
+    },
+    {
+      id: 4003,
+      level: "进阶",
+      duration_hours: 5.2,
+      lesson_count: 8,
+      title: "港股打新与暗盘套利实战",
+      summary: "从定价、回拨到暗盘交易，建立可执行的机会筛选与风险控制清单。",
+      tags: ["交易实操", "暗盘机制", "风险控制"],
+      price_label: "会员免费",
+      badge: "实战",
+      progress: 68,
     },
   ],
 };
@@ -198,5 +217,103 @@ export const mockProfile: ProfileResponse = {
     { title: "我的研报笔记与批注", meta: "16 篇笔记", badge: "有更新", icon: "note" },
     { title: "离线下载与研报合集", meta: "3.2 GB", icon: "download" },
     { title: "我的收藏与重点关注", meta: "48 项关注", icon: "star" },
+  ],
+};
+
+export function createMockContentDetail(id: number): ContentDetailResponse {
+  const item = mockHome.feed.find((entry) => entry.id === id) || mockHome.feed[0];
+  return {
+    id: item.id,
+    category: item.category,
+    title: item.title,
+    summary: item.summary,
+    published_at: item.published_at,
+    access_level: item.access_level,
+    like_count: item.like_count,
+    comment_count: item.comment_count,
+    reading_minutes: 8,
+    author: item.author,
+    sections: [
+      {
+        heading: "核心观察",
+        paragraphs: [
+          "近期价格波动并不只来自单一事件，而是资金偏好、盈利预期和衍生品仓位共同作用的结果。判断阶段机会时，需要把价格变化放回公司基本面和流动性环境中验证。",
+          "我们重点观察盈利预期是否持续上修、机构持仓是否形成共识，以及成交结构是否出现由短线博弈向中期配置切换的迹象。",
+        ],
+      },
+      {
+        heading: "跟踪框架",
+        paragraphs: [
+          "第一步确认产业与公司层面的真实变化；第二步观察估值是否已经充分反映；第三步通过仓位、期权隐含波动率和资金流判断交易拥挤度。",
+          "当基本面改善、估值仍有空间且交易结构不过度拥挤时，才具备更高质量的阶段性研究价值。",
+        ],
+      },
+    ],
+  };
+}
+
+export function createMockCourseDetail(id: number): CourseDetailResponse {
+  const course = mockAcademy.courses.find((entry) => entry.id === id) || mockAcademy.courses[0];
+  const lessons = Array.from({ length: course.lesson_count }, (_, index) => ({
+    id: index + 1,
+    title: [
+      "课程导论与研究目标",
+      "核心规则与参与机制",
+      "信息收集与标的筛选",
+      "定价、回拨与暗盘机制",
+      "仓位控制与破发防范",
+      "案例复盘与执行清单",
+    ][index] || `实战课时 ${index + 1}`,
+    duration_minutes: 18 + index * 4,
+    is_preview: index === 0,
+    learned: index < Math.round((course.progress / 100) * course.lesson_count),
+  }));
+  const splitAt = Math.ceil(lessons.length / 2);
+  return {
+    id: course.id,
+    level: course.level,
+    duration_hours: course.duration_hours,
+    lesson_count: course.lesson_count,
+    title: course.title,
+    summary: course.summary,
+    price_label: course.price_label,
+    progress: course.progress,
+    student_count: 2680,
+    highlights: ["建立完整研究流程", "掌握关键风险节点", "形成可复用分析模板", "结合真实案例实践"],
+    chapters: [
+      { id: 1, title: "第一章 · 建立基础框架", lessons: lessons.slice(0, splitAt) },
+      { id: 2, title: "第二章 · 风险与实战", lessons: lessons.slice(splitAt) },
+    ],
+  };
+}
+
+export const mockMemberCenter: MemberCenterResponse = {
+  member,
+  current_benefits: [
+    "7 大深度专栏畅读",
+    "全部会员直播无限回看",
+    "体系课程会员价",
+    "核心研讨专属席位",
+    "研报合集与离线下载",
+  ],
+  plans: [
+    {
+      code: "month",
+      name: "月度会员",
+      period_label: "连续 30 天",
+      price: 99,
+      original_price: 129,
+      benefits: ["会员专栏", "直播回看"],
+      recommended: false,
+    },
+    {
+      code: "year",
+      name: "星球尊享年会员",
+      period_label: "连续 365 天",
+      price: 899,
+      original_price: 1188,
+      benefits: ["全部专栏", "全部直播", "研讨专席"],
+      recommended: true,
+    },
   ],
 };
