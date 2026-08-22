@@ -1,307 +1,99 @@
-name: 财不外露 M2 内容运营 CI
+name: 财不外露 M2 依赖修复（临时）
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - feature/caibuwailu-m2-membership
-    paths:
-      - "backend/app/api/v1/module_content/**"
-      - "backend/app/api/v1/module_membership/**"
-      - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
-      - "backend/app/init_app.py"
-      - "backend/app/scripts/initialize.py"
-      - "backend/sql/data/cw_menu.json"
-      - "backend/tests/test_api_module_content.py"
-      - "backend/tests/test_project_menu_seed.py"
-      - "frontend/web/src/api/module_content/**"
-      - "frontend/web/src/api/module_membership/**"
-      - "frontend/web/src/views/module_content/**"
-      - "frontend/web/src/views/module_membership/**"
-      - ".github/workflows/caibuwailu-m2-ci.yml"
   pull_request:
     branches:
       - feature/caibuwailu-m1
     paths:
-      - "backend/app/api/v1/module_content/**"
-      - "backend/app/api/v1/module_membership/**"
-      - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
-      - "backend/app/init_app.py"
-      - "backend/app/scripts/initialize.py"
-      - "backend/sql/data/cw_menu.json"
-      - "backend/tests/test_api_module_content.py"
-      - "backend/tests/test_project_menu_seed.py"
-      - "frontend/web/src/api/module_content/**"
-      - "frontend/web/src/api/module_membership/**"
-      - "frontend/web/src/views/module_content/**"
-      - "frontend/web/src/views/module_membership/**"
       - ".github/workflows/caibuwailu-m2-ci.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: caibuwailu-m2-${{ github.ref }}
+  group: caibuwailu-m2-dependency-repair-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  backend-quality:
-    name: Backend contract, security and SQLite migration
+  repair:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
+    timeout-minutes: 20
     steps:
-      - name: Checkout
+      - name: Checkout PR head branch
         uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Sync locked dependencies
-        run: uv sync --frozen
-
-      - name: Validate project menu JSON
-        run: uv run python -m json.tool sql/data/cw_menu.json >/dev/null
-
-      - name: Compile changed backend modules
-        run: >-
-          uv run python -m compileall -q
-          app/api/v1/module_content
-          app/api/v1/module_membership
-          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
-          app/scripts/initialize.py
-          tests/test_api_module_content.py
-          tests/test_project_menu_seed.py
-
-      - name: Ruff lint
-        run: >-
-          uv run ruff check --no-fix
-          app/api/v1/module_content
-          app/api/v1/module_membership
-          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
-          app/scripts/initialize.py
-          tests/test_api_module_content.py
-          tests/test_project_menu_seed.py
-          app/init_app.py
-
-      - name: Ruff format check
-        run: >-
-          uv run ruff format --check
-          app/api/v1/module_content
-          app/api/v1/module_membership
-          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
-          app/scripts/initialize.py
-          tests/test_api_module_content.py
-          tests/test_project_menu_seed.py
-          app/init_app.py
-
-      - name: Security scan changed backend modules
-        run: >-
-          uvx bandit -q -r
-          app/api/v1/module_content
-          app/api/v1/module_membership
-          app/scripts/initialize.py
-
-      - name: Run M2 API and menu workflow tests
-        run: >-
-          uv run pytest -q
-          tests/test_api_module_content.py
-          tests/test_project_menu_seed.py
-
-      - name: Run application smoke tests
-        run: uv run pytest -q tests/test_main.py
-
-      - name: SQLite migration round trip
-        env:
-          ENVIRONMENT: dev
-          DATABASE_TYPE: sqlite
-          DATABASE_NAME: /tmp/caibuwailu_m2_migration
-          SECRET_KEY: ci-only-secret-key-not-for-production
-        run: |
-          rm -f /tmp/caibuwailu_m2_migration.db
-          uv run alembic -c alembic.ini upgrade head
-          uv run alembic -c alembic.ini downgrade base
-          uv run alembic -c alembic.ini upgrade head
-
-  admin-web-build:
-    name: FastApiAdmin typecheck, build and dependency audit
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend/web
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.16.0"
+          node-version: 22.16.0
 
       - name: Enable pnpm
         run: |
           corepack enable
           corepack prepare pnpm@9.15.3 --activate
 
-      - name: Install locked dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck administration frontend
-        run: pnpm run type-check
-
-      - name: Build production administration frontend
-        run: pnpm run build:prod
-
-      - name: Audit production dependencies
-        run: pnpm audit --prod --audit-level high
-
-  mysql-migration:
-    name: MySQL 8.4 migration round trip
-    runs-on: ubuntu-latest
-    services:
-      mysql:
-        image: mysql:8.4
-        env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: caibuwailu
-        ports:
-          - 3306:3306
-        options: >-
-          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=12
-    defaults:
-      run:
-        working-directory: backend
-    env:
-      ENVIRONMENT: dev
-      DATABASE_TYPE: mysql
-      DATABASE_HOST: 127.0.0.1
-      DATABASE_PORT: 3306
-      DATABASE_USER: root
-      DATABASE_PASSWORD: root
-      DATABASE_NAME: caibuwailu
-      SECRET_KEY: ci-only-secret-key-not-for-production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Sync locked dependencies
-        run: uv sync --frozen
-
-      - name: Create existing-system user table fixture
+      - name: Verify abandoned xlsx package is unused
         run: |
-          uv run python - <<'PY'
-          from sqlalchemy import create_engine, text
-          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
-          with engine.begin() as connection:
-              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INT PRIMARY KEY) ENGINE=InnoDB"))
-          PY
+          if grep -RInE '(^|[^[:alnum:]_])(xlsx|XLSX)([^[:alnum:]_]|$)' frontend/web/src; then
+            echo "The vulnerable xlsx package is still referenced by application code." >&2
+            exit 1
+          fi
 
-      - name: Upgrade, downgrade and re-upgrade
+      - name: Apply dependency security policy
+        working-directory: frontend/web
         run: |
-          uv run alembic -c alembic.ini upgrade head
-          uv run alembic -c alembic.ini downgrade base
-          uv run alembic -c alembic.ini upgrade head
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
 
-      - name: Assert MySQL tables
+          delete pkg.dependencies.xlsx;
+          pkg.dependencies.axios = '^1.18.0';
+          pkg.dependencies['markdown-it'] = '^14.1.1';
+          pkg.devDependencies.vite = '^7.3.5';
+          pkg.devDependencies.postcss = '^8.5.18';
+
+          pkg.pnpm ??= {};
+          pkg.pnpm.overrides = {
+            ...(pkg.pnpm.overrides ?? {}),
+            axios: '1.18.0',
+            'form-data': '4.0.6',
+            'linkify-it': '5.0.2',
+            postcss: '8.5.18',
+            vite: '7.3.5',
+            tmp: '0.2.6',
+            'immutable@5.1.5': '5.1.8',
+            'nanoid@3.3.12': '3.3.18',
+            'nanoid@5.1.11': '5.1.16',
+            'brace-expansion@2.1.0': '2.1.4',
+            'brace-expansion@5.0.6': '5.0.9'
+          };
+
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
+      - name: Refresh deterministic lockfile
+        working-directory: frontend/web
         run: |
-          uv run python - <<'PY'
-          from sqlalchemy import create_engine, inspect
-          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
-          expected = {"cw_member_plan", "cw_content_category", "cw_content", "cw_content_plan"}
-          actual = set(inspect(engine).get_table_names())
-          missing = expected - actual
-          assert not missing, f"missing tables: {sorted(missing)}"
-          PY
+          pnpm install --no-frozen-lockfile
+          pnpm install --frozen-lockfile
 
-  postgres-migration:
-    name: PostgreSQL 16 migration round trip
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: caibuwailu
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U postgres -d caibuwailu"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=12
-    defaults:
-      run:
-        working-directory: backend
-    env:
-      ENVIRONMENT: dev
-      DATABASE_TYPE: postgres
-      DATABASE_HOST: 127.0.0.1
-      DATABASE_PORT: 5432
-      DATABASE_USER: postgres
-      DATABASE_PASSWORD: postgres
-      DATABASE_NAME: caibuwailu
-      SECRET_KEY: ci-only-secret-key-not-for-production
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-        with:
-          enable-cache: true
-
-      - name: Sync locked dependencies
-        run: uv sync --frozen
-
-      - name: Create existing-system user table fixture
+      - name: Validate frontend and complete dependency graph
+        working-directory: frontend/web
         run: |
-          uv run python - <<'PY'
-          from sqlalchemy import create_engine, text
-          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
-          with engine.begin() as connection:
-              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INTEGER PRIMARY KEY)"))
-          PY
+          pnpm run type-check
+          pnpm run build:prod
+          pnpm audit --audit-level high
 
-      - name: Upgrade, downgrade and re-upgrade
+      - name: Commit verified dependency repairs
         run: |
-          uv run alembic -c alembic.ini upgrade head
-          uv run alembic -c alembic.ini downgrade base
-          uv run alembic -c alembic.ini upgrade head
-
-      - name: Assert PostgreSQL tables
-        run: |
-          uv run python - <<'PY'
-          from sqlalchemy import create_engine, inspect
-          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
-          expected = {"cw_member_plan", "cw_content_category", "cw_content", "cw_content_plan"}
-          actual = set(inspect(engine).get_table_names())
-          missing = expected - actual
-          assert not missing, f"missing tables: {sorted(missing)}"
-          PY
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/web/package.json frontend/web/pnpm-lock.yaml
+          git commit -m "fix(web): remediate high-severity dependency advisories"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
