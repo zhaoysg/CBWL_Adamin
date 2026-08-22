@@ -1,0 +1,214 @@
+name: One-time M2 CI repair
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - ".github/workflows/one-time-m2-ci-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-membership
+          fetch-depth: 0
+
+      - name: Apply deterministic repairs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          from pathlib import Path
+
+          ROOT = Path.cwd()
+
+          def replace_exact(relative: str, old: str, new: str, expected: int = 1) -> None:
+              path = ROOT / relative
+              text = path.read_text(encoding="utf-8")
+              actual = text.count(old)
+              if actual != expected:
+                  raise RuntimeError(
+                      f"{relative}: expected {expected} occurrence(s), found {actual}: {old!r}"
+                  )
+              path.write_text(text.replace(old, new, expected), encoding="utf-8")
+
+          replace_exact(
+              "backend/app/api/v1/module_content/article/model.py",
+              '''        nullable=False,
+                  index=True,
+                  comment="内容分类ID",
+          ''',
+              '''        nullable=False,
+                  comment="内容分类ID",
+          ''',
+          )
+          replace_exact(
+              "backend/app/api/v1/module_content/article/model.py",
+              '''        nullable=False,
+                  default="",
+                  comment="正文HTML",
+          ''',
+              '''        nullable=False,
+                  comment="正文HTML",
+          ''',
+          )
+          replace_exact(
+              "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py",
+              '''        sa.Column("body", body_type, server_default=sa.text("''"), nullable=False),
+          ''',
+              '''        sa.Column("body", body_type, nullable=False),
+          ''',
+          )
+          replace_exact(
+              "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py",
+              '''    op.create_index("ix_cw_content_category_id", "cw_content", ["category_id"])
+          ''',
+              "",
+          )
+          replace_exact(
+              "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py",
+              '''    op.drop_index("ix_cw_content_category_id", table_name="cw_content")
+          ''',
+              "",
+          )
+          replace_exact(
+              "frontend/web/src/views/module_content/article/index.vue",
+              '''function statusTagType(value?: ContentStatus) {
+            if (value === 1) return "success";
+            if (value === 2) return "warning";
+            if (value === 3) return "info";
+            return "";
+          }
+          ''',
+              '''function statusTagType(value?: ContentStatus) {
+            if (value === 1) return "success";
+            if (value === 2) return "warning";
+            if (value === 3) return "info";
+            return undefined;
+          }
+          ''',
+          )
+          replace_exact(
+              "frontend/web/src/views/module_content/category/index.vue",
+              '''function openCreate(parentId?: number) {
+          ''',
+              '''function assertCategoryRow(row: unknown): asserts row is ContentCategoryTree {
+            if (typeof row !== "object" || row === null) {
+              throw new TypeError("内容分类行数据格式无效");
+            }
+            const candidate = row as Partial<ContentCategoryTree>;
+            if (
+              typeof candidate.id !== "number" ||
+              typeof candidate.category_name !== "string" ||
+              typeof candidate.category_code !== "string"
+            ) {
+              throw new TypeError("内容分类行数据不完整");
+            }
+          }
+
+          function openCreate(parentId?: number) {
+          ''',
+          )
+          replace_exact(
+              "frontend/web/src/views/module_content/category/index.vue",
+              '''async function openEdit(row: ContentCategoryTree) {
+            const response = await ContentCategoryAPI.detail(row.id);
+          ''',
+              '''async function openEdit(row: unknown) {
+            assertCategoryRow(row);
+            const response = await ContentCategoryAPI.detail(row.id);
+          ''',
+          )
+          replace_exact(
+              "frontend/web/src/views/module_content/category/index.vue",
+              '''async function removeOne(row: ContentCategoryTree) {
+            await ElMessageBox.confirm(
+          ''',
+              '''async function removeOne(row: unknown) {
+            assertCategoryRow(row);
+            await ElMessageBox.confirm(
+          ''',
+          )
+          replace_exact(
+              "frontend/web/src/api/module_membership/plan.ts",
+              '''export interface MemberPlanForm extends BaseFormType {
+            plan_code: string;
+            plan_name: string;
+            rank: number;
+            price: string | number;
+          ''',
+              '''export interface MemberPlanForm extends BaseFormType {
+            plan_code: string;
+            plan_name: string;
+            rank: number;
+            price: number;
+          ''',
+          )
+
+          package_path = ROOT / "frontend/web/package.json"
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          scripts = package["scripts"]
+          rebuilt_scripts: dict[str, str] = {}
+          for key, value in scripts.items():
+              if key == "type-check":
+                  rebuilt_scripts["generate:types"] = "tsx scripts/generate-types.ts"
+                  rebuilt_scripts["type-check"] = "pnpm run generate:types && vue-tsc --noEmit"
+              elif key != "generate:types":
+                  rebuilt_scripts[key] = value
+          package["scripts"] = rebuilt_scripts
+          package_path.write_text(
+              json.dumps(package, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+
+          generator_path = ROOT / "frontend/web/scripts/generate-types.ts"
+          generator_path.parent.mkdir(parents=True, exist_ok=True)
+          generator_path.write_text(
+              '''import { build } from "vite";
+
+          // AutoImport and Components generate the declaration files consumed by vue-tsc.
+          // Running a no-write Vite build makes type checking deterministic on clean clones and CI.
+          await build({
+            mode: "development",
+            logLevel: "warn",
+            build: {
+              write: false,
+              emptyOutDir: false,
+            },
+          });
+          ''',
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate patch shape
+        run: |
+          git diff --check
+          python -m compileall -q \
+            backend/app/api/v1/module_content/article/model.py \
+            backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          test -f frontend/web/scripts/generate-types.ts
+
+      - name: Commit repairs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/app/api/v1/module_content/article/model.py \
+            backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py \
+            frontend/web/package.json \
+            frontend/web/scripts/generate-types.ts \
+            frontend/web/src/api/module_membership/plan.ts \
+            frontend/web/src/views/module_content/article/index.vue \
+            frontend/web/src/views/module_content/category/index.vue
+          git commit -m "fix(ci): stabilize M2 database and type gates"
+          git push origin HEAD:feature/caibuwailu-m2-membership
