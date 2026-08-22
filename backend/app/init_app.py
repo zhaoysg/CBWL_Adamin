@@ -17,6 +17,10 @@ from .utils.console import console_end, console_start
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[Any, Any]:
+    from app.config.production_guard import validate_production_settings
+
+    validate_production_settings()
+
     from app.api.v1.module_system.dict.service import DictDataService
     from app.api.v1.module_system.params.service import ParamsService
     from app.core.ap_scheduler import SchedulerUtil
