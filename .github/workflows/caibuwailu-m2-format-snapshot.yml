@@ -6,6 +6,11 @@ on:
       - feature/caibuwailu-m2-membership
     paths:
       - ".github/workflows/caibuwailu-m2-format-snapshot.yml"
+  pull_request:
+    branches:
+      - feature/caibuwailu-m1
+    paths:
+      - ".github/workflows/caibuwailu-m2-format-snapshot.yml"
   workflow_dispatch:
 
 permissions:
