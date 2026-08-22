@@ -1,0 +1,44 @@
+name: 财不外露临时审查快照
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m1
+    paths:
+      - ".github/workflows/caibuwailu-review-snapshot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Package review scope
+        run: |
+          mkdir -p /tmp/review-scope
+          cp -R backend/app/api/v1/module_portal /tmp/review-scope/module_portal
+          cp -R backend/app/core /tmp/review-scope/core
+          cp -R backend/app/config /tmp/review-scope/config
+          cp -R backend/app/common /tmp/review-scope/common
+          cp -R backend/app/api/v1/module_system/notice /tmp/review-scope/notice-pattern
+          cp -R backend/app/alembic /tmp/review-scope/alembic
+          cp -R backend/contract_tests /tmp/review-scope/contract_tests
+          cp -R frontend/app /tmp/review-scope/frontend-app
+          cp backend/app/init_app.py /tmp/review-scope/
+          cp backend/sql/caibuwailu_portal.sql /tmp/review-scope/
+          cp docs/CAIBUWAILU_M1.md docs/CAIBUWAILU_M2.md /tmp/review-scope/
+          cp .github/workflows/caibuwailu-ci.yml /tmp/review-scope/
+          tar -C /tmp -czf /tmp/caibuwailu-review-source.tar.gz review-scope
+
+      - name: Upload review snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: caibuwailu-review-source
+          path: /tmp/caibuwailu-review-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
