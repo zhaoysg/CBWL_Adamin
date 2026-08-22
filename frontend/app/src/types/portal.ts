@@ -7,12 +7,16 @@ export interface Author {
   avatar_text: string;
 }
 
+export type PinnedTargetType = "content" | "academy" | "member";
+
 export interface PinnedItem {
   id: number;
   title: string;
   subtitle: string;
   icon: string;
   accent: "orange" | "blue" | "cyan" | string;
+  target_type: PinnedTargetType;
+  target_id?: number | null;
 }
 
 export interface CommentPreview {
@@ -78,6 +82,7 @@ export interface ColumnCard {
 
 export interface CourseCard {
   id: number;
+  category: string;
   level: string;
   duration_hours: number;
   lesson_count: number;
@@ -172,6 +177,7 @@ export interface CourseChapter {
 
 export interface CourseDetailResponse {
   id: number;
+  category: string;
   level: string;
   duration_hours: number;
   lesson_count: number;
@@ -188,8 +194,8 @@ export interface MemberPlan {
   code: string;
   name: string;
   period_label: string;
-  price: number;
-  original_price?: number | null;
+  price: string;
+  original_price?: string | null;
   benefits: string[];
   recommended: boolean;
 }
@@ -201,7 +207,11 @@ export interface MemberCenterResponse {
 }
 
 export interface PortalHealth {
-  status: "ok";
+  status: "ok" | "degraded";
   service: string;
   version: string;
+  environment: string;
+  data_source: "demo" | "database";
+  production_ready: boolean;
+  reason?: string | null;
 }
