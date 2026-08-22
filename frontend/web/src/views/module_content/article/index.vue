@@ -808,7 +808,7 @@ function statusTagType(value?: ContentStatus) {
   if (value === 1) return "success";
   if (value === 2) return "warning";
   if (value === 3) return "info";
-  return "";
+  return undefined;
 }
 
 onMounted(async () => {

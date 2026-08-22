@@ -106,7 +106,7 @@ def upgrade() -> None:
         sa.Column("slug", sa.String(length=160), nullable=False),
         sa.Column("summary", sa.String(length=1000), nullable=True),
         sa.Column("cover_url", sa.String(length=1000), nullable=True),
-        sa.Column("body", body_type, server_default=sa.text("''"), nullable=False),
+        sa.Column("body", body_type, nullable=False),
         sa.Column("body_format", sa.String(length=16), server_default=sa.text("'html'"), nullable=False),
         sa.Column("author_name", sa.String(length=128), nullable=False),
         sa.Column("access_level", sa.String(length=32), server_default=sa.text("'public'"), nullable=False),
@@ -158,7 +158,6 @@ def upgrade() -> None:
         ["category_id", "status", "published_at"],
     )
     op.create_index("ix_cw_content_title", "cw_content", ["title"])
-    op.create_index("ix_cw_content_category_id", "cw_content", ["category_id"])
     op.create_index("ix_cw_content_published_at", "cw_content", ["published_at"])
     op.create_index("ix_cw_content_is_deleted", "cw_content", ["is_deleted"])
     op.create_index("ix_cw_content_created_time", "cw_content", ["created_time"])
@@ -199,7 +198,6 @@ def downgrade() -> None:
     op.drop_index("ix_cw_content_created_time", table_name="cw_content")
     op.drop_index("ix_cw_content_is_deleted", table_name="cw_content")
     op.drop_index("ix_cw_content_published_at", table_name="cw_content")
-    op.drop_index("ix_cw_content_category_id", table_name="cw_content")
     op.drop_index("ix_cw_content_title", table_name="cw_content")
     op.drop_index("ix_cw_content_category_feed", table_name="cw_content")
     op.drop_index("ix_cw_content_public_feed", table_name="cw_content")

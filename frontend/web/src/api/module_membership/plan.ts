@@ -91,7 +91,7 @@ export interface MemberPlanForm extends BaseFormType {
   plan_code: string;
   plan_name: string;
   rank: number;
-  price: string | number;
+  price: number;
   currency: "CNY";
   duration_days: number;
   benefits: string[];

@@ -312,6 +312,20 @@ function handleSelectionChange(selection: ContentCategoryTree[]) {
   selectedIds.value = selection.map((item) => item.id);
 }
 
+function assertCategoryRow(row: unknown): asserts row is ContentCategoryTree {
+  if (typeof row !== "object" || row === null) {
+    throw new TypeError("内容分类行数据格式无效");
+  }
+  const candidate = row as Partial<ContentCategoryTree>;
+  if (
+    typeof candidate.id !== "number" ||
+    typeof candidate.category_name !== "string" ||
+    typeof candidate.category_code !== "string"
+  ) {
+    throw new TypeError("内容分类行数据不完整");
+  }
+}
+
 function openCreate(parentId?: number) {
   editingId.value = undefined;
   resetForm();
@@ -319,7 +333,8 @@ function openCreate(parentId?: number) {
   dialogVisible.value = true;
 }
 
-async function openEdit(row: ContentCategoryTree) {
+async function openEdit(row: unknown) {
+  assertCategoryRow(row);
   const response = await ContentCategoryAPI.detail(row.id);
   const detail = response.data.data;
   editingId.value = row.id;
@@ -360,7 +375,8 @@ async function submitForm() {
   }
 }
 
-async function removeOne(row: ContentCategoryTree) {
+async function removeOne(row: unknown) {
+  assertCategoryRow(row);
   await ElMessageBox.confirm(
     `确定删除分类「${row.category_name}」吗？存在子分类或内容时将拒绝删除。`,
     "删除确认",

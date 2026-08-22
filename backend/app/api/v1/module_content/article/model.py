@@ -68,7 +68,6 @@ class ContentModel(ModelMixin, UserMixin):
         Integer,
         ForeignKey("cw_content_category.id", ondelete="RESTRICT", onupdate="CASCADE"),
         nullable=False,
-        index=True,
         comment="内容分类ID",
     )
     content_type: Mapped[str] = mapped_column(String(32), nullable=False, default="article", comment="内容类型")
@@ -79,7 +78,6 @@ class ContentModel(ModelMixin, UserMixin):
     body: Mapped[str] = mapped_column(
         Text().with_variant(LONGTEXT(), "mysql"),
         nullable=False,
-        default="",
         comment="正文HTML",
     )
     body_format: Mapped[str] = mapped_column(String(16), nullable=False, default="html", comment="正文格式")
