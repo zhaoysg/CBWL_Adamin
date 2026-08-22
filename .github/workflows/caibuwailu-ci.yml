@@ -7,7 +7,7 @@ on:
       - feature/caibuwailu-m1
     paths:
       - "backend/app/api/v1/module_portal/**"
-      - "backend/tests/test_portal_service.py"
+      - "backend/contract_tests/test_portal_service.py"
       - "frontend/app/**"
       - ".github/workflows/caibuwailu-ci.yml"
   pull_request:
@@ -15,7 +15,7 @@ on:
       - master
     paths:
       - "backend/app/api/v1/module_portal/**"
-      - "backend/tests/test_portal_service.py"
+      - "backend/contract_tests/test_portal_service.py"
       - "frontend/app/**"
       - ".github/workflows/caibuwailu-ci.yml"
 
@@ -44,7 +44,7 @@ jobs:
       - name: Run Portal contract tests
         env:
           PYTHONPATH: backend
-        run: pytest -q backend/tests/test_portal_service.py
+        run: pytest -q backend/contract_tests/test_portal_service.py
 
   h5-build:
     name: H5 typecheck and build
