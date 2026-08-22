@@ -1,0 +1,86 @@
+name: 财不外露 CI
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m1
+    paths:
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/tests/test_portal_service.py"
+      - "frontend/app/**"
+      - ".github/workflows/caibuwailu-ci.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/tests/test_portal_service.py"
+      - "frontend/app/**"
+      - ".github/workflows/caibuwailu-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  portal-contract:
+    name: Portal API contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install contract test dependencies
+        run: python -m pip install --upgrade "pydantic>=2,<3" "pytest>=8,<9"
+
+      - name: Compile Portal module
+        run: python -m compileall -q backend/app/api/v1/module_portal
+
+      - name: Run Portal contract tests
+        env:
+          PYTHONPATH: backend
+        run: pytest -q backend/tests/test_portal_service.py
+
+  h5-build:
+    name: H5 typecheck and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.9.0 --activate
+
+      - name: Install mobile dependencies
+        working-directory: frontend/app
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Typecheck
+        working-directory: frontend/app
+        run: pnpm run type-check
+
+      - name: Build H5 acceptance package
+        working-directory: frontend/app
+        env:
+          VITE_USE_MOCK: "true"
+          VITE_API_BASE_URL: /api/v1
+        run: pnpm run build:h5
+
+      - name: Upload H5 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caibuwailu-h5
+          path: frontend/app/dist/build/h5
+          if-no-files-found: error
+          retention-days: 7
