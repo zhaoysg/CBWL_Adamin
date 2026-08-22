@@ -168,11 +168,7 @@ class InitializeData:
         elif route_name:
             identity = MenuModel.route_name == route_name
         else:
-            parent_condition = (
-                MenuModel.parent_id.is_(None)
-                if parent_id is None
-                else MenuModel.parent_id == parent_id
-            )
+            parent_condition = MenuModel.parent_id.is_(None) if parent_id is None else MenuModel.parent_id == parent_id
             identity = and_(
                 MenuModel.route_path == route_path,
                 MenuModel.type == menu_type,
@@ -180,11 +176,7 @@ class InitializeData:
             )
 
         menu = await db.scalar(select(MenuModel).where(identity).limit(1))
-        payload = {
-            field: node_data.get(field)
-            for field in self._MENU_UPDATE_FIELDS
-            if field in node_data
-        }
+        payload = {field: node_data.get(field) for field in self._MENU_UPDATE_FIELDS if field in node_data}
         if menu is None:
             menu = MenuModel(**payload, parent_id=parent_id)
             db.add(menu)
