@@ -1,15 +1,39 @@
 {
   "name": "财不外露",
   "appid": "__UNI__CAIBUWAILU",
-  "description": "财不外露会员投研与学习平台",
-  "versionName": "0.1.0",
-  "versionCode": "100",
+  "description": "会员投研内容、学院课程与学习中心",
+  "versionName": "0.2.0",
+  "versionCode": 20,
   "transformPx": false,
-  "app-plus": {
-    "distribute": {
-      "android": {"minSdkVersion": 23, "targetSdkVersion": 35, "permissions": []},
-      "ios": {}
+  "h5": {
+    "title": "财不外露",
+    "router": {
+      "mode": "hash",
+      "base": "/"
     }
   },
-  "h5": {"title": "财不外露", "router": {"mode": "history", "base": "/"}}
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "safearea": {
+      "background": "#03182f",
+      "bottom": {
+        "offset": "auto"
+      }
+    },
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "autoclose": true,
+      "waiting": true
+    },
+    "distribute": {
+      "android": {
+        "minSdkVersion": 23,
+        "targetSdkVersion": 35,
+        "permissions": []
+      },
+      "ios": {}
+    }
+  }
 }
