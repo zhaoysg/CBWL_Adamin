@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install contract test dependencies
-        run: python -m pip install --upgrade "pydantic>=2,<3" "pytest>=8,<9"
+        run: python -m pip install --upgrade "fastapi>=0.115,<1" "pydantic>=2,<3" "pytest>=8,<9"
 
       - name: Compile Portal module
         run: python -m compileall -q backend/app/api/v1/module_portal
