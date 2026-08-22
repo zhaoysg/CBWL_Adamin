@@ -1,7 +1,17 @@
-import { mockAcademy, mockHome, mockProfile } from "@/mocks/portal";
+import {
+  createMockContentDetail,
+  createMockCourseDetail,
+  mockAcademy,
+  mockHome,
+  mockMemberCenter,
+  mockProfile,
+} from "@/mocks/portal";
 import type {
   AcademyResponse,
+  ContentDetailResponse,
+  CourseDetailResponse,
   HomeResponse,
+  MemberCenterResponse,
   PortalHealth,
   ProfileResponse,
 } from "@/types/portal";
@@ -61,8 +71,12 @@ function request<T>(path: string): Promise<T> {
   });
 }
 
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 async function withMockFallback<T>(loader: () => Promise<T>, mockData: T): Promise<T> {
-  if (USE_MOCK) return JSON.parse(JSON.stringify(mockData)) as T;
+  if (USE_MOCK) return clone(mockData);
   return loader();
 }
 
@@ -73,4 +87,19 @@ export const portalApi = {
     withMockFallback(() => request<AcademyResponse>("/portal/academy"), mockAcademy),
   profile: () =>
     withMockFallback(() => request<ProfileResponse>("/portal/profile"), mockProfile),
+  content: (id: number) =>
+    withMockFallback(
+      () => request<ContentDetailResponse>(`/portal/content/${id}`),
+      createMockContentDetail(id),
+    ),
+  course: (id: number) =>
+    withMockFallback(
+      () => request<CourseDetailResponse>(`/portal/course/${id}`),
+      createMockCourseDetail(id),
+    ),
+  memberCenter: () =>
+    withMockFallback(
+      () => request<MemberCenterResponse>("/portal/member-center"),
+      mockMemberCenter,
+    ),
 };
