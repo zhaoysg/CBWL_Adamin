@@ -8,7 +8,7 @@ from app.core.base_crud import CRUDBase
 from app.core.base_schema import AuthSchema, PageResultSchema
 
 from .model import ContentModel, ContentPlanModel
-from .schema import ContentCreateSchema, ContentListSchema, ContentQueryParam, ContentUpdateSchema
+from .schema import ContentCreateSchema, ContentListSchema, ContentUpdateSchema
 
 
 class ContentCRUD(CRUDBase[ContentModel, ContentCreateSchema, ContentUpdateSchema]):
