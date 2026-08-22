@@ -1,0 +1,94 @@
+name: One-time frontend supply-chain repair
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - ".github/workflows/one-time-frontend-supply-chain-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-membership
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.3 --activate
+
+      - name: Verify abandoned xlsx package is unused
+        shell: bash
+        run: |
+          if grep -RInE '(^|[^[:alnum:]_])(xlsx|XLSX)([^[:alnum:]_]|$)' frontend/web/src; then
+            echo "The vulnerable xlsx package is still referenced by application code." >&2
+            exit 1
+          fi
+
+      - name: Apply dependency security policy
+        working-directory: frontend/web
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+          delete pkg.dependencies.xlsx;
+          pkg.dependencies.axios = '^1.18.0';
+          pkg.dependencies['markdown-it'] = '^14.1.1';
+          pkg.devDependencies.vite = '^7.3.5';
+          pkg.devDependencies.postcss = '^8.5.18';
+
+          pkg.pnpm ??= {};
+          pkg.pnpm.overrides = {
+            ...(pkg.pnpm.overrides ?? {}),
+            axios: '1.18.0',
+            'form-data': '4.0.6',
+            'linkify-it': '5.0.2',
+            postcss: '8.5.18',
+            vite: '7.3.5',
+            tmp: '0.2.6',
+            'immutable@5.1.5': '5.1.8',
+            'nanoid@3.3.12': '3.3.18',
+            'nanoid@5.1.11': '5.1.16',
+            'brace-expansion@2.1.0': '2.1.4',
+            'brace-expansion@5.0.6': '5.0.9'
+          };
+
+          fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + '\n');
+          NODE
+
+      - name: Refresh deterministic lockfile
+        working-directory: frontend/web
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm install --frozen-lockfile
+
+      - name: Validate frontend and full dependency graph
+        working-directory: frontend/web
+        run: |
+          pnpm run type-check
+          pnpm run build:prod
+          pnpm audit --audit-level high
+
+      - name: Commit verified dependency repairs
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/web/package.json frontend/web/pnpm-lock.yaml
+          git commit -m "fix(web): remediate high-severity dependency advisories"
+          git push origin HEAD:feature/caibuwailu-m2-membership
