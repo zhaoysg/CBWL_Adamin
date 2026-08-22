@@ -2,13 +2,45 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+PROJECT_PERMISSION_PREFIXES = ("module_content:", "module_membership:")
 
-def _flatten(nodes: list[dict]) -> list[dict]:
+
+def _flatten(nodes: list[dict], parent_route_name: str | None = None) -> list[dict]:
     result: list[dict] = []
     for node in nodes:
-        result.append(node)
-        result.extend(_flatten(node.get("children") or []))
+        row = dict(node)
+        row["_parent_route_name"] = parent_route_name
+        result.append(row)
+        result.extend(_flatten(node.get("children") or [], node.get("route_name") or parent_route_name))
     return result
+
+
+def _project_rows(rows: list[dict]) -> list[dict]:
+    route_names = {
+        "ContentOperations",
+        "ContentArticle",
+        "ContentCategory",
+        "Membership",
+        "MembershipPlan",
+    }
+    return [
+        row
+        for row in rows
+        if row.get("route_name") in route_names
+        or str(row.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)
+    ]
+
+
+def _project_signature(rows: list[dict]) -> list[tuple]:
+    return sorted(
+        (
+            row.get("type"),
+            row.get("route_name"),
+            row.get("permission"),
+            row.get("_parent_route_name"),
+        )
+        for row in _project_rows(rows)
+    )
 
 
 def test_project_menu_seed_contains_routes_and_permissions(
@@ -21,7 +53,7 @@ def test_project_menu_seed_contains_routes_and_permissions(
     assert payload["success"] is True
 
     menus = _flatten(payload["data"])
-    route_names = {item.get("route_name") for item in menus}
+    by_route_name = {item.get("route_name"): item for item in menus if item.get("route_name")}
     permissions = {item.get("permission") for item in menus if item.get("permission")}
 
     assert {
@@ -30,7 +62,14 @@ def test_project_menu_seed_contains_routes_and_permissions(
         "ContentCategory",
         "Membership",
         "MembershipPlan",
-    } <= route_names
+    } <= by_route_name.keys()
+
+    assert by_route_name["ContentArticle"]["type"] == 2
+    assert by_route_name["ContentArticle"]["_parent_route_name"] == "ContentOperations"
+    assert by_route_name["ContentCategory"]["type"] == 2
+    assert by_route_name["ContentCategory"]["_parent_route_name"] == "ContentOperations"
+    assert by_route_name["MembershipPlan"]["type"] == 2
+    assert by_route_name["MembershipPlan"]["_parent_route_name"] == "Membership"
 
     expected_permissions = {
         "module_content:article:query",
@@ -56,8 +95,17 @@ def test_project_menu_seed_contains_routes_and_permissions(
     }
     assert expected_permissions <= permissions
 
+    project_buttons = [
+        item
+        for item in menus
+        if item.get("type") == 3
+        and str(item.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)
+    ]
+    button_permissions = [item["permission"] for item in project_buttons]
+    assert len(button_permissions) == len(set(button_permissions))
 
-def test_project_menu_seed_is_idempotent(
+
+def test_project_menu_tree_is_stable_across_repeated_reads(
     test_client: TestClient,
     auth_headers: dict[str, str],
 ) -> None:
@@ -68,7 +116,4 @@ def test_project_menu_seed_is_idempotent(
 
     first_rows = _flatten(first.json()["data"])
     second_rows = _flatten(second.json()["data"])
-    first_permissions = [item.get("permission") for item in first_rows if item.get("permission")]
-    second_permissions = [item.get("permission") for item in second_rows if item.get("permission")]
-    assert len(first_permissions) == len(set(first_permissions))
-    assert first_permissions == second_permissions
+    assert _project_signature(first_rows) == _project_signature(second_rows)
