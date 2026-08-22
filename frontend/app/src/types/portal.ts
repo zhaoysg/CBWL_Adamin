@@ -137,6 +137,69 @@ export interface ProfileResponse {
   assets: AssetEntry[];
 }
 
+export interface ContentSection {
+  heading?: string | null;
+  paragraphs: string[];
+}
+
+export interface ContentDetailResponse {
+  id: number;
+  category: string;
+  title: string;
+  summary: string;
+  published_at: string;
+  access_level: AccessLevel;
+  like_count: number;
+  comment_count: number;
+  reading_minutes: number;
+  author: Author;
+  sections: ContentSection[];
+}
+
+export interface LessonSummary {
+  id: number;
+  title: string;
+  duration_minutes: number;
+  is_preview: boolean;
+  learned: boolean;
+}
+
+export interface CourseChapter {
+  id: number;
+  title: string;
+  lessons: LessonSummary[];
+}
+
+export interface CourseDetailResponse {
+  id: number;
+  level: string;
+  duration_hours: number;
+  lesson_count: number;
+  title: string;
+  summary: string;
+  price_label: string;
+  progress: number;
+  student_count: number;
+  highlights: string[];
+  chapters: CourseChapter[];
+}
+
+export interface MemberPlan {
+  code: string;
+  name: string;
+  period_label: string;
+  price: number;
+  original_price?: number | null;
+  benefits: string[];
+  recommended: boolean;
+}
+
+export interface MemberCenterResponse {
+  member: MemberSummary;
+  current_benefits: string[];
+  plans: MemberPlan[];
+}
+
 export interface PortalHealth {
   status: "ok";
   service: string;
