@@ -1,17 +1,188 @@
-$navy: #062341;
-$gold: #ffb21c;
-$orange: #ff8b23;
-$bg: #f5f7fa;
-$text: #121722;
-$muted: #747d89;
+$navy-950: #03182f;
+$navy-900: #052341;
+$navy-800: #07335e;
+$navy-700: #0c477a;
+$gold-500: #ffae1a;
+$orange-500: #ff8a20;
+$green-500: #39b995;
+$cyan-500: #32b9d1;
+$surface: #ffffff;
+$background: #f4f6f9;
+$text: #151a22;
+$muted: #747e8b;
+$line: #e7ebf0;
 
-page { background: $bg; color: $text; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
-.hero { padding: 42rpx 32rpx 32rpx; color: #fff; background: linear-gradient(120deg, #031a34, #0b3c6a); }
-.brand { font-size: 44rpx; font-weight: 900; }
-.subtitle { margin-top: 10rpx; color: rgba(255,255,255,.72); font-size: 24rpx; }
-.card { margin: 24rpx 30rpx; padding: 28rpx; border-radius: 28rpx; background: #fff; box-shadow: 0 16rpx 40rpx rgba(5,35,66,.08); }
-.title { font-size: 34rpx; font-weight: 800; line-height: 1.45; }
-.muted { margin-top: 10rpx; color: $muted; font-size: 25rpx; line-height: 1.65; }
-.gold { color: $orange; font-weight: 800; }
-.badge { padding: 6rpx 12rpx; border-radius: 10rpx; color: #15715f; background: #e2f8f1; font-size: 21rpx; }
-.row { display: flex; align-items: center; justify-content: space-between; gap: 16rpx; }
+page {
+  min-height: 100%;
+  color: $text;
+  background: $background;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+view,
+text,
+scroll-view,
+button,
+image {
+  box-sizing: border-box;
+}
+
+button::after {
+  border: 0;
+}
+
+.page-shell {
+  min-height: 100vh;
+  padding-bottom: calc(156rpx + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  background: $background;
+}
+
+.safe-top {
+  height: env(safe-area-inset-top);
+  min-height: 24rpx;
+}
+
+.navy-hero {
+  position: relative;
+  overflow: hidden;
+  color: #fff;
+  background:
+    radial-gradient(circle at 90% 20%, rgba(34, 91, 142, 0.38), transparent 32%),
+    linear-gradient(135deg, $navy-950 0%, #06294c 58%, #0a416f 100%);
+
+  &::after {
+    position: absolute;
+    top: 28rpx;
+    right: -70rpx;
+    width: 280rpx;
+    height: 280rpx;
+    border: 44rpx solid rgba(255, 255, 255, 0.025);
+    border-radius: 48rpx;
+    content: "";
+    transform: rotate(18deg);
+  }
+}
+
+.glass-icon-button {
+  display: flex;
+  width: 72rpx;
+  height: 72rpx;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.11);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(12px);
+}
+
+.gold-button {
+  display: inline-flex;
+  height: 72rpx;
+  padding: 0 28rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  border: none;
+  border-radius: 38rpx;
+  color: #3d2700;
+  background: linear-gradient(100deg, #ffd33d, #ff9416);
+  box-shadow: 0 14rpx 32rpx rgba(255, 163, 24, 0.28);
+  font-size: 26rpx;
+  font-weight: 900;
+}
+
+.surface-card {
+  border: 1rpx solid rgba(9, 39, 68, 0.05);
+  border-radius: 28rpx;
+  background: $surface;
+  box-shadow: 0 14rpx 36rpx rgba(8, 35, 62, 0.08);
+}
+
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.section-title {
+  position: relative;
+  padding-left: 22rpx;
+  color: $text;
+  font-size: 34rpx;
+  font-weight: 900;
+  letter-spacing: 1rpx;
+
+  &::before {
+    position: absolute;
+    top: 4rpx;
+    bottom: 4rpx;
+    left: 0;
+    width: 7rpx;
+    border-radius: 8rpx;
+    background: $navy-800;
+    content: "";
+  }
+}
+
+.section-link {
+  color: $navy-800;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.pill {
+  display: inline-flex;
+  min-height: 44rpx;
+  padding: 0 16rpx;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border-radius: 12rpx;
+  color: #294a68;
+  background: #edf4fa;
+  font-size: 21rpx;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pill.member {
+  color: #176b58;
+  background: #e0f7f0;
+}
+
+.pill.orange {
+  color: #b86616;
+  background: #fff0df;
+}
+
+.pill.gold {
+  color: #7d4d00;
+  background: #fff5d6;
+}
+
+.muted-text {
+  color: $muted;
+}
+
+.h-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.skeleton-line {
+  height: 20rpx;
+  border-radius: 10rpx;
+  background: linear-gradient(90deg, #eef1f4 25%, #f8f9fb 50%, #eef1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer {
+  to { background-position: -200% 0; }
+}
