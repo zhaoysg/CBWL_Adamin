@@ -83,14 +83,18 @@ class ContentCategoryService:
         return [ContentCategoryOptionSchema.model_validate(obj) for obj in objs]
 
     async def create(self, data: ContentCategoryCreateSchema) -> ContentCategoryOutSchema:
-        await self._assert_parent(data.parent_id)
+        await self._assert_parent(data.parent_id, require_enabled=data.status == 0)
         await self._assert_unique(data.category_code, data.category_name, data.parent_id)
         obj = await self.crud.create(data=data)
         return await self.detail(obj.id)
 
     async def update(self, id: int, data: ContentCategoryUpdateSchema) -> ContentCategoryOutSchema:
         await self.crud.get_or_404(id=id, msg="内容分类不存在")
-        await self._assert_parent(data.parent_id, category_id=id)
+        await self._assert_parent(
+            data.parent_id,
+            category_id=id,
+            require_enabled=data.status == 0,
+        )
         await self._assert_unique(data.category_code, data.category_name, data.parent_id, exclude_id=id)
         await self.crud.update(id=id, data=data)
         return await self.detail(id)
@@ -149,23 +153,89 @@ class ContentCategoryService:
             raise CustomException(msg="部分内容分类不存在", status_code=RET.NOT_FOUND.code)
 
         if data.status == 0:
-            parent_ids = {obj.parent_id for obj in objs if obj.parent_id is not None and obj.parent_id not in unique_ids}
-            if parent_ids:
-                disabled_parent_count = await self.db.scalar(
-                    select(func.count()).select_from(ContentCategoryModel).where(
-                        ContentCategoryModel.id.in_(parent_ids),
-                        or_(ContentCategoryModel.status != 0, ContentCategoryModel.is_deleted.is_(True)),
-                    )
-                )
-                if disabled_parent_count:
-                    raise CustomException(
-                        msg="存在停用的父分类，不能启用子分类",
-                        code=RET.CONFLICT.code,
-                        status_code=RET.CONFLICT.code,
-                    )
+            await self._assert_parents_enabled(objs, unique_ids)
+        else:
+            await self._assert_can_disable(unique_ids)
         await self.crud.set(ids=unique_ids, status=data.status)
 
-    async def _assert_parent(self, parent_id: int | None, category_id: int | None = None) -> None:
+    async def _assert_parents_enabled(
+        self,
+        categories: list[ContentCategoryModel],
+        selected_ids: list[int],
+    ) -> None:
+        parent_ids = {
+            item.parent_id
+            for item in categories
+            if item.parent_id is not None and item.parent_id not in selected_ids
+        }
+        if not parent_ids:
+            return
+        disabled_parent_count = await self.db.scalar(
+            select(func.count()).select_from(ContentCategoryModel).where(
+                ContentCategoryModel.id.in_(parent_ids),
+                or_(ContentCategoryModel.status != 0, ContentCategoryModel.is_deleted.is_(True)),
+            )
+        )
+        if disabled_parent_count:
+            raise CustomException(
+                msg="存在停用的父分类，不能启用子分类",
+                code=RET.CONFLICT.code,
+                status_code=RET.CONFLICT.code,
+            )
+
+    async def _assert_can_disable(self, selected_ids: list[int]) -> None:
+        all_categories = await self.crud.get_list(order_by=[{"id": "asc"}])
+        children: dict[int, list[int]] = {}
+        by_id = {item.id: item for item in all_categories}
+        for item in all_categories:
+            if item.parent_id is not None:
+                children.setdefault(item.parent_id, []).append(item.id)
+
+        descendants: set[int] = set()
+        stack = list(selected_ids)
+        while stack:
+            current_id = stack.pop()
+            for child_id in children.get(current_id, []):
+                if child_id not in descendants:
+                    descendants.add(child_id)
+                    stack.append(child_id)
+
+        selected = set(selected_ids)
+        active_outside = [
+            by_id[item_id].category_name
+            for item_id in descendants - selected
+            if by_id[item_id].status == 0
+        ]
+        if active_outside:
+            raise CustomException(
+                msg="存在未同时停用的子分类，不能停用父分类",
+                code=RET.CONFLICT.code,
+                status_code=RET.CONFLICT.code,
+            )
+
+        from app.api.v1.module_content.article.model import ContentModel
+
+        published_count = await self.db.scalar(
+            select(func.count()).select_from(ContentModel).where(
+                ContentModel.category_id.in_(selected_ids),
+                ContentModel.status == 1,
+                ContentModel.is_deleted.is_(False),
+            )
+        )
+        if published_count:
+            raise CustomException(
+                msg="分类下存在已发布内容，请先下线内容",
+                code=RET.CONFLICT.code,
+                status_code=RET.CONFLICT.code,
+            )
+
+    async def _assert_parent(
+        self,
+        parent_id: int | None,
+        category_id: int | None = None,
+        *,
+        require_enabled: bool = False,
+    ) -> None:
         if parent_id is None:
             return
         if category_id is not None and parent_id == category_id:
@@ -174,6 +244,12 @@ class ContentCategoryService:
         current = await self.crud.get(id=parent_id)
         if current is None:
             raise CustomException(msg="父分类不存在", status_code=RET.NOT_FOUND.code)
+        if require_enabled and current.status != 0:
+            raise CustomException(
+                msg="启用分类不能挂在停用父分类下",
+                code=RET.CONFLICT.code,
+                status_code=RET.CONFLICT.code,
+            )
 
         visited: set[int] = set()
         depth = 0
@@ -197,16 +273,16 @@ class ContentCategoryService:
         parent_id: int | None,
         exclude_id: int | None = None,
     ) -> None:
+        parent_condition = (
+            ContentCategoryModel.parent_id.is_(None)
+            if parent_id is None
+            else ContentCategoryModel.parent_id == parent_id
+        )
         conditions = [
             ContentCategoryModel.is_deleted.is_(False),
             or_(
                 ContentCategoryModel.category_code == category_code,
-                and_(
-                    ContentCategoryModel.category_name == category_name,
-                    ContentCategoryModel.parent_id.is_(None)
-                    if parent_id is None
-                    else ContentCategoryModel.parent_id == parent_id,
-                ),
+                and_(ContentCategoryModel.category_name == category_name, parent_condition),
             ),
         ]
         if exclude_id is not None:
