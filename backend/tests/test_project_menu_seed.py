@@ -28,12 +28,7 @@ def _project_rows(rows: list[dict]) -> list[dict]:
         "Membership",
         "MembershipPlan",
     }
-    return [
-        row
-        for row in rows
-        if row.get("route_name") in route_names
-        or str(row.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)
-    ]
+    return [row for row in rows if row.get("route_name") in route_names or str(row.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)]
 
 
 def _project_signature(rows: list[dict]) -> list[tuple]:
@@ -58,9 +53,7 @@ def test_project_menu_seed_contains_routes_and_permissions(
     assert payload["success"] is True
 
     menus = _flatten(payload["data"])
-    by_route_name = {
-        item.get("route_name"): item for item in menus if item.get("route_name")
-    }
+    by_route_name = {item.get("route_name"): item for item in menus if item.get("route_name")}
     permissions = {item.get("permission") for item in menus if item.get("permission")}
 
     assert {
@@ -102,12 +95,7 @@ def test_project_menu_seed_contains_routes_and_permissions(
     }
     assert expected_permissions <= permissions
 
-    project_buttons = [
-        item
-        for item in menus
-        if item.get("type") == 3
-        and str(item.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)
-    ]
+    project_buttons = [item for item in menus if item.get("type") == 3 and str(item.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)]
     button_permissions = [item["permission"] for item in project_buttons]
     assert len(button_permissions) == len(set(button_permissions))
 
