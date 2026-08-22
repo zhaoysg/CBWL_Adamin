@@ -1,0 +1,18 @@
+{
+  "pages": [
+    {"path": "pages/home/index", "style": {"navigationStyle": "custom"}},
+    {"path": "pages/academy/index", "style": {"navigationStyle": "custom"}},
+    {"path": "pages/mine/index", "style": {"navigationStyle": "custom"}}
+  ],
+  "tabBar": {
+    "color": "#15191f",
+    "selectedColor": "#073d6f",
+    "backgroundColor": "#ffffff",
+    "list": [
+      {"pagePath": "pages/home/index", "text": "首页"},
+      {"pagePath": "pages/academy/index", "text": "学院"},
+      {"pagePath": "pages/mine/index", "text": "我的"}
+    ]
+  },
+  "globalStyle": {"backgroundColor": "#f5f7fa", "navigationBarTitleText": "财不外露"}
+}
