@@ -20,6 +20,27 @@
         "navigationStyle": "custom",
         "navigationBarTitleText": "个人中心"
       }
+    },
+    {
+      "path": "pages/content/detail",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "深度内容"
+      }
+    },
+    {
+      "path": "pages/course/detail",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "课程详情"
+      }
+    },
+    {
+      "path": "pages/member/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "会员中心"
+      }
     }
   ],
   "globalStyle": {
