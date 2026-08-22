@@ -87,36 +87,58 @@ class MemberPlanService:
         return await self.detail(id)
 
     async def delete(self, ids: list[int]) -> None:
-        if not ids:
+        unique_ids = sorted(set(ids))
+        if not unique_ids:
             raise CustomException(msg="请选择需要删除的会员套餐", status_code=RET.BAD_REQUEST.code)
 
-        objs = await self.crud.get_list(search={"id": ("in", ids)})
-        if len({obj.id for obj in objs}) != len(set(ids)):
+        objs = await self.crud.get_list(search={"id": ("in", unique_ids)})
+        if len(objs) != len(unique_ids):
             raise CustomException(msg="部分会员套餐不存在", status_code=RET.NOT_FOUND.code)
 
         # 延迟导入，避免会员与内容模型在模块初始化阶段形成循环依赖。
         from app.api.v1.module_content.article.model import ContentPlanModel
 
         association_count = await self.db.scalar(
-            select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(ids))
+            select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids))
         )
         if association_count:
             raise CustomException(
-                msg="套餐仍被内容权限引用，请先解除关联",
+                msg="套餐仍被内容权限或历史内容引用，请停用而不是删除",
                 code=RET.CONFLICT.code,
                 status_code=RET.CONFLICT.code,
             )
-        await self.crud.delete(ids=ids)
+        await self.crud.delete(ids=unique_ids)
 
     async def set_available(self, data: BatchSetAvailable) -> None:
-        if not data.ids:
+        unique_ids = sorted(set(data.ids))
+        if not unique_ids:
             raise CustomException(msg="请选择需要修改状态的会员套餐", status_code=RET.BAD_REQUEST.code)
         count = await self.db.scalar(
             select(func.count()).select_from(MemberPlanModel).where(
-                MemberPlanModel.id.in_(data.ids),
+                MemberPlanModel.id.in_(unique_ids),
                 MemberPlanModel.is_deleted.is_(False),
             )
         )
-        if count != len(set(data.ids)):
+        if count != len(unique_ids):
             raise CustomException(msg="部分会员套餐不存在", status_code=RET.NOT_FOUND.code)
-        await self.crud.set(ids=data.ids, status=data.status)
+
+        if data.status == 1:
+            from app.api.v1.module_content.article.model import ContentModel, ContentPlanModel
+
+            published_reference_count = await self.db.scalar(
+                select(func.count())
+                .select_from(ContentPlanModel)
+                .join(ContentModel, ContentModel.id == ContentPlanModel.content_id)
+                .where(
+                    ContentPlanModel.plan_id.in_(unique_ids),
+                    ContentModel.status == 1,
+                    ContentModel.is_deleted.is_(False),
+                )
+            )
+            if published_reference_count:
+                raise CustomException(
+                    msg="套餐仍被已发布内容使用，请先调整内容权限或下线内容",
+                    code=RET.CONFLICT.code,
+                    status_code=RET.CONFLICT.code,
+                )
+        await self.crud.set(ids=unique_ids, status=data.status)
