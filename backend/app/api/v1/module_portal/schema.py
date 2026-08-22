@@ -1,212 +1,230 @@
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 AccessLevel = Literal["public", "login", "member", "premium"]
+PinnedTargetType = Literal["content", "academy", "member"]
 
 
-class Author(BaseModel):
-    id: int
-    name: str
-    title: str
-    avatar_text: str = "研"
+class PortalModel(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+        validate_assignment=True,
+    )
 
 
-class PinnedItem(BaseModel):
-    id: int
-    title: str
-    subtitle: str
-    icon: str
-    accent: str = "blue"
+class Author(PortalModel):
+    id: int = Field(gt=0)
+    name: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=128)
+    avatar_text: str = Field(default="研", min_length=1, max_length=4)
 
 
-class CommentPreview(BaseModel):
-    author: str
-    avatar_text: str
-    content: str
+class PinnedItem(PortalModel):
+    id: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=255)
+    subtitle: str = Field(min_length=1, max_length=500)
+    icon: str = Field(min_length=1, max_length=64)
+    accent: str = Field(default="blue", min_length=1, max_length=32)
+    target_type: PinnedTargetType
+    target_id: int | None = Field(default=None, gt=0)
 
 
-class FeedItem(BaseModel):
-    id: int
-    category: str
-    content_type: str
-    title: str
-    summary: str
+class CommentPreview(PortalModel):
+    author: str = Field(min_length=1, max_length=128)
+    avatar_text: str = Field(min_length=1, max_length=4)
+    content: str = Field(min_length=1, max_length=500)
+
+
+class FeedItem(PortalModel):
+    id: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=128)
+    content_type: str = Field(min_length=1, max_length=32)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=1000)
     published_at: datetime
     access_level: AccessLevel = "public"
-    like_count: int = 0
-    comment_count: int = 0
+    like_count: int = Field(default=0, ge=0)
+    comment_count: int = Field(default=0, ge=0)
     author: Author
-    liked_by_names: list[str] = Field(default_factory=list)
-    comments: list[CommentPreview] = Field(default_factory=list)
+    liked_by_names: list[str] = Field(default_factory=list, max_length=20)
+    comments: list[CommentPreview] = Field(default_factory=list, max_length=10)
 
 
-class MemberSummary(BaseModel):
-    id: int
-    nickname: str
-    level_name: str
+class MemberSummary(PortalModel):
+    id: int = Field(gt=0)
+    nickname: str = Field(min_length=1, max_length=128)
+    level_name: str = Field(min_length=1, max_length=128)
     expire_date: date
-    member_no: str
-    joined_days: int
-    slogan: str
+    member_no: str = Field(min_length=1, max_length=64)
+    joined_days: int = Field(ge=0)
+    slogan: str = Field(min_length=1, max_length=500)
 
 
-class HomeResponse(BaseModel):
-    brand_name: str
-    brand_slogan: str
-    joined_count: int
+class HomeResponse(PortalModel):
+    brand_name: str = Field(min_length=1, max_length=64)
+    brand_slogan: str = Field(min_length=1, max_length=255)
+    joined_count: int = Field(ge=0)
     member: MemberSummary
-    pinned: list[PinnedItem]
-    categories: list[str]
-    feed: list[FeedItem]
+    pinned: list[PinnedItem] = Field(max_length=20)
+    categories: list[str] = Field(min_length=1, max_length=30)
+    feed: list[FeedItem] = Field(max_length=100)
 
 
-class LiveSession(BaseModel):
-    id: int
-    schedule_text: str
-    title: str
-    subtitle: str
-    access_label: str
-    tags: list[str]
-    reservation_count: int
+class LiveSession(PortalModel):
+    id: int = Field(gt=0)
+    schedule_text: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=255)
+    subtitle: str = Field(min_length=1, max_length=500)
+    access_label: str = Field(min_length=1, max_length=64)
+    tags: list[str] = Field(default_factory=list, max_length=20)
+    reservation_count: int = Field(ge=0)
 
 
-class ColumnCard(BaseModel):
-    id: int
-    status: str
-    title: str
-    summary: str
-    article_count: int
-    access_label: str
-    accent: str = "cyan"
+class ColumnCard(PortalModel):
+    id: int = Field(gt=0)
+    status: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=1000)
+    article_count: int = Field(ge=0)
+    access_label: str = Field(min_length=1, max_length=64)
+    accent: str = Field(default="cyan", min_length=1, max_length=32)
 
 
-class CourseCard(BaseModel):
-    id: int
-    level: str
-    duration_hours: float
-    lesson_count: int
-    title: str
-    summary: str
-    tags: list[str]
-    price_label: str
-    badge: str | None = None
-    progress: int = 0
+class CourseCard(PortalModel):
+    id: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=64)
+    level: str = Field(min_length=1, max_length=64)
+    duration_hours: float = Field(gt=0, le=10000)
+    lesson_count: int = Field(gt=0, le=10000)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=1000)
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    price_label: str = Field(min_length=1, max_length=64)
+    badge: str | None = Field(default=None, max_length=64)
+    progress: int = Field(default=0, ge=0, le=100)
 
 
-class AcademyResponse(BaseModel):
-    live_sessions: list[LiveSession]
-    columns: list[ColumnCard]
-    course_categories: list[str]
-    courses: list[CourseCard]
+class AcademyResponse(PortalModel):
+    live_sessions: list[LiveSession] = Field(max_length=50)
+    columns: list[ColumnCard] = Field(max_length=100)
+    course_categories: list[str] = Field(min_length=1, max_length=50)
+    courses: list[CourseCard] = Field(max_length=200)
 
 
-class LearningStats(BaseModel):
-    learning_courses: int
-    reading_columns: int
-    replay_count: int
-    learning_hours: float
+class LearningStats(PortalModel):
+    learning_courses: int = Field(ge=0)
+    reading_columns: int = Field(ge=0)
+    replay_count: int = Field(ge=0)
+    learning_hours: float = Field(ge=0, le=1_000_000)
 
 
-class RecentLearning(BaseModel):
-    course_id: int
-    category: str
-    title: str
-    lesson_title: str
-    learned_lessons: int
-    total_lessons: int
-    progress: int
+class RecentLearning(PortalModel):
+    course_id: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=255)
+    lesson_title: str = Field(min_length=1, max_length=255)
+    learned_lessons: int = Field(ge=0)
+    total_lessons: int = Field(gt=0)
+    progress: int = Field(ge=0, le=100)
     last_studied_at: datetime
 
 
-class Achievement(BaseModel):
-    code: str
-    name: str
-    icon: str
+class Achievement(PortalModel):
+    code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
+    name: str = Field(min_length=1, max_length=128)
+    icon: str = Field(min_length=1, max_length=64)
     unlocked: bool
 
 
-class AssetEntry(BaseModel):
-    title: str
-    meta: str
-    badge: str | None = None
-    icon: str
+class AssetEntry(PortalModel):
+    title: str = Field(min_length=1, max_length=255)
+    meta: str = Field(min_length=1, max_length=128)
+    badge: str | None = Field(default=None, max_length=64)
+    icon: str = Field(min_length=1, max_length=64)
 
 
-class ProfileResponse(BaseModel):
+class ProfileResponse(PortalModel):
     member: MemberSummary
-    benefits: list[str]
+    benefits: list[str] = Field(max_length=50)
     stats: LearningStats
     recent_learning: RecentLearning
-    achievements: list[Achievement]
-    assets: list[AssetEntry]
+    achievements: list[Achievement] = Field(max_length=100)
+    assets: list[AssetEntry] = Field(max_length=100)
 
 
-class ContentSection(BaseModel):
-    heading: str | None = None
-    paragraphs: list[str]
+class ContentSection(PortalModel):
+    heading: str | None = Field(default=None, max_length=255)
+    paragraphs: list[str] = Field(min_length=1, max_length=50)
 
 
-class ContentDetailResponse(BaseModel):
-    id: int
-    category: str
-    title: str
-    summary: str
+class ContentDetailResponse(PortalModel):
+    id: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=1000)
     published_at: datetime
     access_level: AccessLevel
-    like_count: int
-    comment_count: int
-    reading_minutes: int
+    like_count: int = Field(ge=0)
+    comment_count: int = Field(ge=0)
+    reading_minutes: int = Field(gt=0, le=1440)
     author: Author
-    sections: list[ContentSection]
+    sections: list[ContentSection] = Field(min_length=1, max_length=100)
 
 
-class LessonSummary(BaseModel):
-    id: int
-    title: str
-    duration_minutes: int
+class LessonSummary(PortalModel):
+    id: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=255)
+    duration_minutes: int = Field(ge=0, le=1440)
     is_preview: bool = False
     learned: bool = False
 
 
-class CourseChapter(BaseModel):
-    id: int
-    title: str
-    lessons: list[LessonSummary]
+class CourseChapter(PortalModel):
+    id: int = Field(gt=0)
+    title: str = Field(min_length=1, max_length=255)
+    lessons: list[LessonSummary] = Field(min_length=1, max_length=500)
 
 
-class CourseDetailResponse(BaseModel):
-    id: int
-    level: str
-    duration_hours: float
-    lesson_count: int
-    title: str
-    summary: str
-    price_label: str
-    progress: int
-    student_count: int
-    highlights: list[str]
-    chapters: list[CourseChapter]
+class CourseDetailResponse(PortalModel):
+    id: int = Field(gt=0)
+    category: str = Field(min_length=1, max_length=64)
+    level: str = Field(min_length=1, max_length=64)
+    duration_hours: float = Field(gt=0, le=10000)
+    lesson_count: int = Field(gt=0, le=10000)
+    title: str = Field(min_length=1, max_length=255)
+    summary: str = Field(min_length=1, max_length=1000)
+    price_label: str = Field(min_length=1, max_length=64)
+    progress: int = Field(ge=0, le=100)
+    student_count: int = Field(ge=0)
+    highlights: list[str] = Field(max_length=50)
+    chapters: list[CourseChapter] = Field(min_length=1, max_length=100)
 
 
-class MemberPlan(BaseModel):
-    code: str
-    name: str
-    period_label: str
-    price: float
-    original_price: float | None = None
-    benefits: list[str]
+class MemberPlan(PortalModel):
+    code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
+    name: str = Field(min_length=1, max_length=128)
+    period_label: str = Field(min_length=1, max_length=128)
+    price: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    original_price: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    benefits: list[str] = Field(min_length=1, max_length=50)
     recommended: bool = False
 
 
-class MemberCenterResponse(BaseModel):
+class MemberCenterResponse(PortalModel):
     member: MemberSummary
-    current_benefits: list[str]
-    plans: list[MemberPlan]
+    current_benefits: list[str] = Field(max_length=50)
+    plans: list[MemberPlan] = Field(min_length=1, max_length=50)
 
 
-class PortalHealth(BaseModel):
-    status: Literal["ok"] = "ok"
+class PortalHealth(PortalModel):
+    status: Literal["ok", "degraded"]
     service: str = "caibuwailu-portal"
-    version: str = "0.2.0"
+    version: str = "0.2.1"
+    environment: str
+    data_source: Literal["demo", "database"]
+    production_ready: bool
+    reason: str | None = None
