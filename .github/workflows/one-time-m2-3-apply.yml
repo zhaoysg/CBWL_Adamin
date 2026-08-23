@@ -42,7 +42,7 @@ jobs:
           cat .github/m2-3-payload/part-* | base64 --decode > /tmp/caibuwailu-m2-3-payload.tar.xz
           echo "760177deee1503e00da7dc16e729097db5d2a120928f0cfbb3f209cca1983070  /tmp/caibuwailu-m2-3-payload.tar.xz" | sha256sum --check
           tar -tJf /tmp/caibuwailu-m2-3-payload.tar.xz > /tmp/m2-3-payload-files.txt
-          if grep -E '(^|/)\.\.(?:/|$)|^/' /tmp/m2-3-payload-files.txt; then
+          if grep -E '(^|/)\.\.(/|$)|^/' /tmp/m2-3-payload-files.txt; then
             echo "Unsafe path found in payload" >&2
             exit 1
           fi
@@ -72,7 +72,7 @@ jobs:
             tests/test_api_module_membership_subscription.py \
             tests/test_portal_entitlement.py \
             tests/test_project_menu_seed.py
-          uv run ruff check --fix \
+          uv run ruff check --fix --unsafe-fixes \
             app/api/v1/module_membership \
             app/api/v1/module_portal \
             app/api/v1/module_system/auth/service.py \
