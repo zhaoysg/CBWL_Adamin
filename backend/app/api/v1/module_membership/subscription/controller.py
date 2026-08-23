@@ -52,8 +52,8 @@ async def list_member_subscription_controller(
 async def list_member_subscription_user_options_controller(
     auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:query"]))],
     db: Annotated[AsyncSession, Depends(db_getter)],
-    keyword: Annotated[str | None, Query(default=None, max_length=128)],
-    limit: Annotated[int, Query(default=20, ge=1, le=50)],
+    keyword: Annotated[str | None, Query(max_length=128)] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
 ) -> JSONResponse:
     result = await MemberSubscriptionService(auth, db).user_options(
         keyword=keyword,
