@@ -3,7 +3,7 @@ import { clearSession, getAccessToken, getRefreshToken, updateTokens } from "@/u
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || "/api/v1").replace(/\/$/, "");
 const TIMEOUT = 15_000;
 
-type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+type HttpMethod = NonNullable<UniApp.RequestOptions["method"]>;
 
 interface ApiEnvelope<T> {
   code?: number;
@@ -15,7 +15,7 @@ interface ApiEnvelope<T> {
 
 interface RequestOptions {
   method?: HttpMethod;
-  data?: unknown;
+  data?: UniApp.RequestOptions["data"];
   headers?: Record<string, string>;
   skipAuth?: boolean;
   skipRefresh?: boolean;
