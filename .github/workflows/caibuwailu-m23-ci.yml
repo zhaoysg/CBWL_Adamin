@@ -50,32 +50,53 @@ jobs:
       - name: Compile M2.3 modules
         run: >-
           uv run python -m compileall -q
-          app/api/v1/module_membership
-          app/api/v1/module_portal
+          app/api/v1/module_membership/subscription
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_membership/plan/service.py
+          app/api/v1/module_membership/__init__.py
+          app/api/v1/module_portal/secure_controller.py
+          app/api/v1/module_portal/secure_schema.py
+          app/api/v1/module_portal/secure_service.py
+          app/api/v1/module_portal/__init__.py
           app/core/optional_auth.py
           app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
           tests/test_api_module_subscription_entitlement.py
       - name: Ruff lint
         run: >-
           uv run ruff check --no-fix
-          app/api/v1/module_membership
-          app/api/v1/module_portal
+          app/api/v1/module_membership/subscription
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_membership/plan/service.py
+          app/api/v1/module_membership/__init__.py
+          app/api/v1/module_portal/secure_controller.py
+          app/api/v1/module_portal/secure_schema.py
+          app/api/v1/module_portal/secure_service.py
+          app/api/v1/module_portal/__init__.py
           app/core/optional_auth.py
           app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
           tests/test_api_module_subscription_entitlement.py
       - name: Ruff format check
         run: >-
           uv run ruff format --check
-          app/api/v1/module_membership
-          app/api/v1/module_portal
+          app/api/v1/module_membership/subscription
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_membership/plan/service.py
+          app/api/v1/module_membership/__init__.py
+          app/api/v1/module_portal/secure_controller.py
+          app/api/v1/module_portal/secure_schema.py
+          app/api/v1/module_portal/secure_service.py
+          app/api/v1/module_portal/__init__.py
           app/core/optional_auth.py
           app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
           tests/test_api_module_subscription_entitlement.py
       - name: Bandit
         run: >-
           uvx bandit -q -r
-          app/api/v1/module_membership
-          app/api/v1/module_portal
+          app/api/v1/module_membership/subscription
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_membership/plan/service.py
+          app/api/v1/module_portal/secure_controller.py
+          app/api/v1/module_portal/secure_service.py
           app/core/optional_auth.py
       - name: Run subscription and entitlement tests
         run: uv run pytest -q tests/test_api_module_subscription_entitlement.py
