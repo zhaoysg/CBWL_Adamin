@@ -94,9 +94,10 @@ class CustomOAuth2PasswordRequestForm(OAuth2PasswordRequestForm):
 
 
 # OAuth2认证配置
-OAuth2Schema = CustomOAuth2PasswordBearer(token_url="system/auth/login", description="认证")
+AUTH_TOKEN_URL = "system/auth/login"
+OAuth2Schema = CustomOAuth2PasswordBearer(token_url=AUTH_TOKEN_URL, description="认证")
 OptionalOAuth2Schema = CustomOAuth2PasswordBearer(
-    token_url="system/auth/login",
+    token_url=AUTH_TOKEN_URL,
     description="可选认证；未携带凭证时按匿名用户处理",
     auto_error=False,
 )
