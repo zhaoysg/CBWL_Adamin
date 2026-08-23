@@ -1,0 +1,63 @@
+name: 财不外露 M2.3 Ruff 格式修复（临时）
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-auth-entitlement
+    paths:
+      - ".github/workflows/one-time-m23-ruff-format.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout M2.3 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-auth-entitlement
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Apply deterministic Ruff format
+        working-directory: backend
+        run: |
+          uv run ruff format \
+            app/api/v1/module_membership/plan/service.py \
+            app/api/v1/module_membership/subscription/service.py
+          uv run ruff check --no-fix \
+            app/api/v1/module_membership/plan/service.py \
+            app/api/v1/module_membership/subscription/service.py
+          uv run ruff format --check \
+            app/api/v1/module_membership/plan/service.py \
+            app/api/v1/module_membership/subscription/service.py
+
+      - name: Commit formatting repair
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/app/api/v1/module_membership/plan/service.py \
+            backend/app/api/v1/module_membership/subscription/service.py
+          if git diff --cached --quiet; then
+            echo "No formatting changes required"
+            exit 0
+          fi
+          git commit -m "style(m2.3): apply deterministic Ruff formatting"
+          git push origin HEAD:feature/caibuwailu-m2-auth-entitlement
