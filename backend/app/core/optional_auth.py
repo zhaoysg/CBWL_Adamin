@@ -10,8 +10,10 @@ from app.core.base_schema import AuthSchema
 from app.core.dependencies import _authenticate, db_getter, redis_getter
 from app.core.security import CustomOAuth2PasswordBearer
 
+_AUTH_LOGIN_PATH = "system/auth/login"
+
 OptionalOAuth2Schema = CustomOAuth2PasswordBearer(
-    token_url="system/auth/login",
+    token_url=_AUTH_LOGIN_PATH,
     description="可选认证",
     auto_error=False,
 )
