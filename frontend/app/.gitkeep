@@ -1,2 +1,2 @@
-This directory contains private mobile app / miniprogram source code.
-This content is not open source.
+财不外露统一用户端（uni-app）。
+本目录源码完整纳入仓库，同一套代码用于构建 H5、Android 与 iOS 客户端。
