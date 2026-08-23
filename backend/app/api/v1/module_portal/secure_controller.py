@@ -20,7 +20,7 @@ def _secure_headers(response: Response) -> None:
     response.headers["X-Portal-Data-Source"] = "database"
 
 
-@SecurePortalRouter.get("/feed", response_model=PortalFeedResponse, summary="获取按会员权益过滤的投研内容")
+@SecurePortalRouter.get("/feed", summary="获取按会员权益过滤的投研内容")
 async def secure_feed(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
@@ -46,7 +46,6 @@ async def secure_feed(
 
 @SecurePortalRouter.get(
     "/article/{content_id}",
-    response_model=PortalArticleResponse,
     summary="读取经过服务端权益判定的投研正文",
 )
 async def secure_article(
@@ -65,7 +64,6 @@ async def secure_article(
 
 @SecurePortalRouter.get(
     "/me/membership",
-    response_model=PortalMembershipResponse,
     summary="获取当前用户有效会员权益",
 )
 async def secure_membership(
