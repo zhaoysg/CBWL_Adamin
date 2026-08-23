@@ -1,0 +1,39 @@
+name: One-time M2.3 source snapshot
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-3-entitlements
+    paths:
+      - ".github/workflows/one-time-m2-3-source-snapshot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-3-entitlements
+          fetch-depth: 1
+
+      - name: Create source archive
+        run: |
+          tar \
+            --exclude=.git \
+            --exclude='**/node_modules' \
+            --exclude='**/.venv' \
+            --exclude='**/dist' \
+            --exclude='**/__pycache__' \
+            -czf /tmp/caibuwailu-m2-3-source.tar.gz .
+
+      - name: Upload source archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: caibuwailu-m2-3-source
+          path: /tmp/caibuwailu-m2-3-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
