@@ -83,17 +83,15 @@ jobs:
             tests/test_portal_entitlement.py \
             tests/test_project_menu_seed.py
 
-      - name: Remove transport-only files
+      - name: Remove non-workflow transport files
         shell: bash
         run: |
           set -euo pipefail
           rm -rf .github/m2-3-payload
-          rm -f .github/workflows/one-time-m2-3-apply.yml
-          rm -f .github/workflows/one-time-m2-3-source-snapshot.yml
           rm -f .github/m2-3-source-run.txt
           rm -f .github/m2-3-apply-run.txt
-          rm -f .github/workflows/one-time-m2-exceljs-security-repair.yml
           rm -f .github/scripts/m2_exceljs_security_repair.py
+          rm -f .github/workflows/caibuwailu-m2-3-ci.yml
 
       - name: Commit M2.3 source
         shell: bash
