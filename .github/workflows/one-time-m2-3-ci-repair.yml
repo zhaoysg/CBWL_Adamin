@@ -1,0 +1,116 @@
+name: One-time M2.3 CI repair
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-3-entitlements
+    paths:
+      - ".github/workflows/one-time-m2-3-ci-repair.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout M2.3 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-3-entitlements
+          fetch-depth: 0
+
+      - name: Apply deterministic CI repairs
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected source fragment not found: {path}")
+              file.write_text(text.replace(old, new), encoding="utf-8")
+
+          replace_exact(
+              "backend/app/api/v1/module_membership/subscription/controller.py",
+              "    keyword: Annotated[str | None, Query(default=None, max_length=128)],\n"
+              "    limit: Annotated[int, Query(default=20, ge=1, le=50)],\n",
+              "    keyword: Annotated[str | None, Query(max_length=128)] = None,\n"
+              "    limit: Annotated[int, Query(ge=1, le=50)] = 20,\n",
+          )
+
+          replace_exact(
+              "backend/app/core/security.py",
+              "# OAuth2认证配置\n"
+              "OAuth2Schema = CustomOAuth2PasswordBearer(token_url=\"system/auth/login\", description=\"认证\")\n"
+              "OptionalOAuth2Schema = CustomOAuth2PasswordBearer(\n"
+              "    token_url=\"system/auth/login\",\n",
+              "# OAuth2认证配置\n"
+              "AUTH_TOKEN_URL = \"system/auth/login\"\n"
+              "OAuth2Schema = CustomOAuth2PasswordBearer(token_url=AUTH_TOKEN_URL, description=\"认证\")\n"
+              "OptionalOAuth2Schema = CustomOAuth2PasswordBearer(\n"
+              "    token_url=AUTH_TOKEN_URL,\n",
+          )
+
+          replace_exact(
+              "frontend/app/src/api/http.ts",
+              "type HttpMethod = \"GET\" | \"POST\" | \"PUT\" | \"PATCH\" | \"DELETE\";\n",
+              "type HttpMethod = NonNullable<UniApp.RequestOptions[\"method\"]>;\n",
+          )
+          replace_exact(
+              "frontend/app/src/api/http.ts",
+              "  data?: unknown;\n",
+              "  data?: UniApp.RequestOptions[\"data\"];\n",
+          )
+
+          replace_exact(
+              "frontend/web/src/views/module_membership/subscription/index.vue",
+              "async function openDetail(row: MemberSubscriptionTable) {\n"
+              "  if (!row.id) return;\n"
+              "  const response = await MemberSubscriptionAPI.detail(row.id);\n"
+              "  detail.value = response.data.data;\n"
+              "  detailVisible.value = true;\n"
+              "}\n\n"
+              "async function revokeSubscription(row: MemberSubscriptionTable) {\n"
+              "  if (!row.id) return;\n",
+              "function assertSubscriptionRow(row: unknown): asserts row is MemberSubscriptionTable {\n"
+              "  if (typeof row !== \"object\" || row === null) {\n"
+              "    throw new TypeError(\"会员订阅行数据格式无效\");\n"
+              "  }\n"
+              "  const candidate = row as Partial<MemberSubscriptionTable>;\n"
+              "  if (\n"
+              "    typeof candidate.id !== \"number\" ||\n"
+              "    typeof candidate.user_id !== \"number\" ||\n"
+              "    typeof candidate.plan_id !== \"number\" ||\n"
+              "    typeof candidate.version_no !== \"number\"\n"
+              "  ) {\n"
+              "    throw new TypeError(\"会员订阅行数据不完整\");\n"
+              "  }\n"
+              "}\n\n"
+              "async function openDetail(row: unknown) {\n"
+              "  assertSubscriptionRow(row);\n"
+              "  const response = await MemberSubscriptionAPI.detail(row.id);\n"
+              "  detail.value = response.data.data;\n"
+              "  detailVisible.value = true;\n"
+              "}\n\n"
+              "async function revokeSubscription(row: unknown) {\n"
+              "  assertSubscriptionRow(row);\n",
+          )
+          PY
+
+      - name: Commit repairs
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/app/api/v1/module_membership/subscription/controller.py \
+            backend/app/core/security.py \
+            frontend/app/src/api/http.ts \
+            frontend/web/src/views/module_membership/subscription/index.vue
+          git commit -m "fix(m2.3): repair API signatures and frontend type gates"
+          git push origin HEAD:feature/caibuwailu-m2-3-entitlements
