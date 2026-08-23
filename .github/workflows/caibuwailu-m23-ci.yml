@@ -1,0 +1,217 @@
+name: 财不外露 M2.3 订阅与权益 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/caibuwailu-m2-auth-entitlement
+    paths:
+      - "backend/app/api/v1/module_membership/**"
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/app/core/optional_auth.py"
+      - "backend/app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py"
+      - "backend/tests/test_api_module_subscription_entitlement.py"
+      - ".github/workflows/caibuwailu-m23-ci.yml"
+  pull_request:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - "backend/app/api/v1/module_membership/**"
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/app/core/optional_auth.py"
+      - "backend/app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py"
+      - "backend/tests/test_api_module_subscription_entitlement.py"
+      - ".github/workflows/caibuwailu-m23-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m23-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: Subscription, entitlement, security and SQLite
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+      - name: Compile M2.3 modules
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_membership
+          app/api/v1/module_portal
+          app/core/optional_auth.py
+          app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
+          tests/test_api_module_subscription_entitlement.py
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_membership
+          app/api/v1/module_portal
+          app/core/optional_auth.py
+          app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
+          tests/test_api_module_subscription_entitlement.py
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_membership
+          app/api/v1/module_portal
+          app/core/optional_auth.py
+          app/alembic/versions/20260823_01_caibuwailu_subscription_entitlement.py
+          tests/test_api_module_subscription_entitlement.py
+      - name: Bandit
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_membership
+          app/api/v1/module_portal
+          app/core/optional_auth.py
+      - name: Run subscription and entitlement tests
+        run: uv run pytest -q tests/test_api_module_subscription_entitlement.py
+      - name: Run M2 regression tests
+        run: >-
+          uv run pytest -q
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
+          tests/test_main.py
+      - name: SQLite migration round trip
+        env:
+          ENVIRONMENT: dev
+          DATABASE_TYPE: sqlite
+          DATABASE_NAME: /tmp/caibuwailu_m23_migration
+          SECRET_KEY: ci-only-secret-key-not-for-production
+        run: |
+          rm -f /tmp/caibuwailu_m23_migration.db
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260822_01
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade base
+          uv run alembic -c alembic.ini upgrade head
+
+  mysql-migration:
+    name: MySQL 8.4 M2.3 migration round trip
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: root
+      DATABASE_PASSWORD: root
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INT PRIMARY KEY) ENGINE=InnoDB"))
+          PY
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260822_01
+          uv run alembic -c alembic.ini upgrade head
+      - name: Assert subscription table
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          assert "cw_member_subscription" in inspect(engine).get_table_names()
+          PY
+
+  postgres-migration:
+    name: PostgreSQL 16 M2.3 migration round trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: caibuwailu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d caibuwailu"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: postgres
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INTEGER PRIMARY KEY)"))
+          PY
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260822_01
+          uv run alembic -c alembic.ini upgrade head
+      - name: Assert subscription table
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          assert "cw_member_subscription" in inspect(engine).get_table_names()
+          PY
