@@ -14,7 +14,7 @@ from app.core.database import async_db_session
 from app.core.exceptions import CustomException
 from app.core.logger import logger
 from app.core.redis_crud import RedisCURD
-from app.core.security import OAuth2Schema, decode_access_token
+from app.core.security import OAuth2Schema, OptionalOAuth2Schema, decode_access_token
 
 
 async def db_getter() -> AsyncGenerator[AsyncSession, None]:
@@ -48,6 +48,22 @@ async def get_current_user(
     return await _authenticate(token, db, redis)
 
 
+async def get_optional_current_user(
+    db: AsyncSession = Depends(db_getter),
+    redis: Redis = Depends(redis_getter),
+    token: str | None = Depends(OptionalOAuth2Schema),
+) -> AuthSchema | None:
+    """可选认证。
+
+    未提供 Authorization 时返回 ``None``；一旦提供凭证，则必须完整通过
+    JWT、Redis 会话、用户状态和数据库用户校验，避免无效凭证被静默降级为匿名。
+    """
+
+    if not token:
+        return None
+    return await _authenticate(token, db, redis)
+
+
 async def _authenticate(
     token: str,
     db: AsyncSession,
@@ -57,9 +73,12 @@ async def _authenticate(
     if not token:
         raise CustomException(msg="认证已失效", code=RET.UNAUTHORIZED.code, status_code=401)
 
-    # 处理Bearer token
-    if token.startswith("Bearer"):
-        token = token.split(" ")[1]
+    # HTTP 依赖通常已经剥离 Bearer 前缀；WebSocket/内部调用仍可能传入完整值。
+    scheme, separator, credential = token.partition(" ")
+    if separator and scheme.lower() == settings.TOKEN_TYPE.lower():
+        token = credential.strip()
+    if not token:
+        raise CustomException(msg="认证已失效", code=RET.UNAUTHORIZED.code, status_code=401)
 
     # 滑动模式下跳过 JWT exp 校验，由 Redis session TTL 决定实际有效期
     payload = decode_access_token(token, verify_exp=not settings.TOKEN_SLIDING_EXPIRE)

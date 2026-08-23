@@ -27,6 +27,7 @@ def _project_rows(rows: list[dict]) -> list[dict]:
         "ContentCategory",
         "Membership",
         "MembershipPlan",
+        "MembershipSubscription",
     }
     return [row for row in rows if row.get("route_name") in route_names or str(row.get("permission") or "").startswith(PROJECT_PERMISSION_PREFIXES)]
 
@@ -62,6 +63,7 @@ def test_project_menu_seed_contains_routes_and_permissions(
         "ContentCategory",
         "Membership",
         "MembershipPlan",
+        "MembershipSubscription",
     } <= by_route_name.keys()
 
     assert by_route_name["ContentArticle"]["type"] == 2
@@ -70,6 +72,8 @@ def test_project_menu_seed_contains_routes_and_permissions(
     assert by_route_name["ContentCategory"]["_parent_route_name"] == "ContentOperations"
     assert by_route_name["MembershipPlan"]["type"] == 2
     assert by_route_name["MembershipPlan"]["_parent_route_name"] == "Membership"
+    assert by_route_name["MembershipSubscription"]["type"] == 2
+    assert by_route_name["MembershipSubscription"]["_parent_route_name"] == "Membership"
 
     expected_permissions = {
         "module_content:article:query",
@@ -92,6 +96,10 @@ def test_project_menu_seed_contains_routes_and_permissions(
         "module_membership:plan:update",
         "module_membership:plan:patch",
         "module_membership:plan:delete",
+        "module_membership:subscription:query",
+        "module_membership:subscription:detail",
+        "module_membership:subscription:grant",
+        "module_membership:subscription:revoke",
     }
     assert expected_permissions <= permissions
 

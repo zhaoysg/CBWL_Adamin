@@ -42,12 +42,14 @@ class CustomOAuth2PasswordBearer(OAuth2PasswordBearer):
         - CustomException: 认证失败时抛出,状态码为401。
         """
         authorization = request.headers.get("Authorization")
-        scheme, token = get_authorization_scheme_param(authorization)
-
-        if not authorization or scheme.lower() != settings.TOKEN_TYPE.lower():
+        if not authorization:
             if self.auto_error:
                 raise CustomException(msg="认证失败,请登录后再试", code=10401, status_code=401)
             return None
+
+        scheme, token = get_authorization_scheme_param(authorization)
+        if scheme.lower() != settings.TOKEN_TYPE.lower() or not token:
+            raise CustomException(msg="认证失败,请登录后再试", code=10401, status_code=401)
         return token
 
 
@@ -93,6 +95,11 @@ class CustomOAuth2PasswordRequestForm(OAuth2PasswordRequestForm):
 
 # OAuth2认证配置
 OAuth2Schema = CustomOAuth2PasswordBearer(token_url="system/auth/login", description="认证")
+OptionalOAuth2Schema = CustomOAuth2PasswordBearer(
+    token_url="system/auth/login",
+    description="可选认证；未携带凭证时按匿名用户处理",
+    auto_error=False,
+)
 
 
 def create_access_token(payload: JWTPayloadSchema) -> str:

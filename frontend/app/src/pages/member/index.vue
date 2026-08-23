@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
+import { onShow } from "@dcloudio/uni-app";
 import AppIcon from "@/components/AppIcon.vue";
 import ErrorState from "@/components/ErrorState.vue";
 import LoadingState from "@/components/LoadingState.vue";
 import { portalApi } from "@/api/portal";
 import type { MemberCenterResponse } from "@/types/portal";
+import { hasSession, loginUrl } from "@/utils/auth";
 
 const data = ref<MemberCenterResponse | null>(null);
 const loading = ref(true);
 const errorMessage = ref("");
-const selectedPlanCode = ref("year");
+const selectedPlanCode = ref("");
 
 const selectedPlan = computed(() =>
   data.value?.plans.find((plan) => plan.code === selectedPlanCode.value),
 );
+const authenticated = ref(hasSession());
 
 async function loadData() {
   loading.value = true;
@@ -36,18 +39,25 @@ function goBack() {
 }
 
 function submitOrder() {
-  if (!selectedPlan.value) {
-    uni.showToast({ title: "请选择会员方案", icon: "none" });
+  if (!authenticated.value) {
+    uni.navigateTo({ url: loginUrl("/pages/member/index") });
     return;
   }
-  uni.showToast({
-    title: `已选择${selectedPlan.value.name}，支付能力将在下一阶段接入`,
-    icon: "none",
-    duration: 2600,
+  if (!selectedPlan.value) {
+    uni.showToast({ title: "当前没有可选会员方案", icon: "none" });
+    return;
+  }
+  uni.showModal({
+    title: "支付尚未开放",
+    content: `已选择「${selectedPlan.value.name}」。当前阶段不会创建订单或扣款，支付与回调验签将在支付切片完成后开放。`,
+    showCancel: false,
   });
 }
 
-onMounted(loadData);
+onShow(() => {
+  authenticated.value = hasSession();
+  void loadData();
+});
 </script>
 
 <template>
@@ -68,17 +78,30 @@ onMounted(loadData);
     <ErrorState v-else-if="errorMessage" :message="errorMessage" @retry="loadData" />
 
     <view v-else-if="data" class="member-content">
-      <view class="surface-card current-member-card">
+      <view v-if="data.member" class="surface-card current-member-card">
         <view class="current-member-top">
-          <text class="current-member-label">当前会员</text>
-          <view class="pill gold">有效中</view>
+          <text class="current-member-label">当前账号</text>
+          <view class="pill gold">{{ data.member.is_member ? "会员有效" : "注册用户" }}</view>
         </view>
-        <text class="current-member-name"><AppIcon name="crown" :size="32" />{{ data.member.level_name }}</text>
-        <text class="current-member-meta">{{ data.member.expire_date }} 到期 · {{ data.member.member_no }}</text>
+        <text class="current-member-name">
+          <AppIcon name="crown" :size="32" />{{ data.member.level_name }}
+        </text>
+        <text class="current-member-meta">
+          {{ data.member.expire_date ? `${data.member.expire_date} 到期` : "尚未开通会员" }} · {{ data.member.member_no }}
+        </text>
+      </view>
+      <view v-else class="surface-card current-member-card">
+        <view class="current-member-top">
+          <text class="current-member-label">当前状态</text>
+          <view class="pill">未登录</view>
+        </view>
+        <text class="current-member-name"><AppIcon name="crown" :size="32" />游客访问</text>
+        <text class="current-member-meta">登录后可同步会员订阅与内容访问权限</text>
       </view>
 
       <text class="member-section-title">当前已享权益</text>
       <view class="surface-card benefit-card">
+        <view v-if="!data.current_benefits.length" class="benefit-empty">当前账号暂无生效权益</view>
         <view
           v-for="(benefit, index) in data.current_benefits"
           :key="benefit"
@@ -121,7 +144,7 @@ onMounted(loadData);
         <text class="selected-price-label">应付金额</text>
         <text class="selected-price">¥{{ selectedPlan?.price || 0 }}</text>
       </view>
-      <button class="member-pay-button" @tap="submitOrder">确认方案</button>
+      <button class="member-pay-button" @tap="submitOrder">{{ authenticated ? "选择方案" : "登录后选择" }}</button>
     </view>
   </view>
 </template>
@@ -434,4 +457,5 @@ onMounted(loadData);
   font-size: 25rpx;
   font-weight: 900;
 }
+.benefit-empty { padding: 24rpx 0; color: #7d8792; font-size: 22rpx; text-align: center; }
 </style>

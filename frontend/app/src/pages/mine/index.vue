@@ -1,27 +1,41 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
+import { ApiError } from "../../api/http";
+import { authApi } from "../../api/auth";
 import { portalApi } from "../../api/portal";
 import type { ProfileResponse } from "../../types/portal";
 import CwBottomNav from "../../components/portal/CwBottomNav.vue";
 import CwIcon from "../../components/portal/CwIcon.vue";
 import CwPageState from "../../components/portal/CwPageState.vue";
 import { formatHours } from "../../utils/portal-format";
+import { loginUrl } from "../../utils/auth";
 
 const data = ref<ProfileResponse>();
 const loading = ref(true);
 const error = ref("");
+const requiresLogin = ref(false);
 
 async function load() {
   loading.value = true;
   error.value = "";
+  requiresLogin.value = false;
   try {
     data.value = await portalApi.profile();
   } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : "网络连接失败";
+    data.value = undefined;
+    if (reason instanceof ApiError && reason.statusCode === 401) {
+      requiresLogin.value = true;
+    } else {
+      error.value = reason instanceof Error ? reason.message : "网络连接失败";
+    }
   } finally {
     loading.value = false;
   }
+}
+
+function openLogin() {
+  uni.navigateTo({ url: loginUrl("/pages/mine/index") });
 }
 
 function openMemberCenter() {
@@ -29,16 +43,38 @@ function openMemberCenter() {
 }
 
 function continueLearning() {
-  if (!data.value) return;
-  uni.navigateTo({ url: `/pages/course/detail?id=${data.value.recent_learning.course_id}` });
+  const recent = data.value?.recent_learning;
+  if (!recent) return;
+  uni.navigateTo({ url: `/pages/course/detail?id=${recent.course_id}` });
 }
 
 function openAsset(title: string) {
   uni.showToast({ title: `${title}功能正在接入`, icon: "none" });
 }
 
-onMounted(load);
-onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
+async function logout() {
+  const confirmed = await new Promise<boolean>((resolve) => {
+    uni.showModal({
+      title: "退出登录",
+      content: "退出后需要重新登录才能查看会员内容，确定继续吗？",
+      success: (result) => resolve(Boolean(result.confirm)),
+      fail: () => resolve(false),
+    });
+  });
+  if (!confirmed) return;
+  try {
+    await authApi.logout();
+  } finally {
+    data.value = undefined;
+    requiresLogin.value = true;
+    uni.showToast({ title: "已退出登录", icon: "none" });
+  }
+}
+
+onShow(() => {
+  uni.hideTabBar({ animation: false, fail: () => undefined });
+  void load();
+});
 </script>
 
 <template>
@@ -53,6 +89,11 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
       </view>
 
       <CwPageState v-if="loading || error" :loading="loading" :error="error" dark @retry="load" />
+      <view v-else-if="requiresLogin" class="login-panel">
+        <text class="login-panel__title">登录后查看个人中心</text>
+        <text class="login-panel__copy">会员权益、内容访问和订阅有效期均以登录账号为准。</text>
+        <button class="login-panel__button" @tap="openLogin">立即登录</button>
+      </view>
       <template v-else-if="data">
         <view class="member-profile">
           <view class="profile-avatar">
@@ -73,7 +114,8 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
           </view>
           <view class="membership-benefits">
             <text v-for="benefit in data.benefits" :key="benefit">{{ benefit }}</text>
-            <text class="expire-date">{{ data.member.expire_date }} 到期</text>
+            <text v-if="!data.benefits.length" class="benefit-empty">当前账号暂无会员权益</text>
+            <text class="expire-date">{{ data.member.expire_date ? `${data.member.expire_date} 到期` : "尚未开通会员" }}</text>
           </view>
         </view>
       </template>
@@ -87,7 +129,7 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
         <view class="stat"><text class="stat-value">{{ formatHours(data.stats.learning_hours) }}<small>h</small></text><text class="stat-label">研学时长</text></view>
       </view>
 
-      <section class="panel recent-panel">
+      <section v-if="data.recent_learning" class="panel recent-panel">
         <view class="panel-heading">
           <view class="panel-title"><view class="orange-play"><CwIcon name="play" :size="20" tone="white" /></view><text>最近在学</text></view>
           <text class="panel-time">昨天 21:30</text>
@@ -115,11 +157,13 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
             <view class="achievement-icon" :class="`achievement-icon--${item.icon}`"><CwIcon :name="item.icon" :size="43" :tone="item.unlocked ? (item.icon === 'chip' ? 'green' : item.icon === 'wave' ? 'cyan' : 'orange') : 'muted'" /></view>
             <text>{{ item.name }}</text>
           </view>
+        <view v-if="!data.achievements.length" class="empty-panel">成就体系将在学习模块上线后开放</view>
         </view>
       </section>
 
       <text class="group-title">投研资产与记录</text>
       <section class="panel asset-panel">
+        <view v-if="!data.assets.length" class="empty-panel">暂无投研资产记录</view>
         <button v-for="asset in data.assets" :key="asset.title" class="asset-row" hover-class="asset-row--hover" @tap="openAsset(asset.title)">
           <view class="asset-icon" :class="`asset-icon--${asset.icon}`"><CwIcon :name="asset.icon" :size="33" :tone="asset.icon === 'star' ? 'gold' : asset.icon === 'download' ? 'cyan' : 'navy'" /></view>
           <text class="asset-title">{{ asset.title }}</text>
@@ -130,6 +174,7 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
       </section>
 
       <text class="group-title group-title--light">社区互动与交流</text>
+      <button class="logout-button" @tap="logout">退出登录</button>
     </view>
 
     <CwBottomNav active="mine" />
@@ -211,4 +256,13 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
 .asset-title { flex: 1; min-width: 0; color: #1a222a; font-size: 24rpx; font-weight: 800; }
 .asset-meta { margin-left: 10rpx; color: #858d96; font-size: 20rpx; }
 .asset-badge { margin-left: 10rpx; padding: 5rpx 9rpx; color: #e88b2d; font-size: 17rpx; background: #fff3e5; border-radius: 5rpx; }
+.login-panel { margin-top: 34rpx; padding: 30rpx; text-align: center; background: rgba(255,255,255,.09); border: 1rpx solid rgba(255,255,255,.16); border-radius: 24rpx; }
+.login-panel__title, .login-panel__copy { display: block; }
+.login-panel__title { font-size: 30rpx; font-weight: 900; }
+.login-panel__copy { margin-top: 10rpx; color: rgba(255,255,255,.68); font-size: 21rpx; line-height: 1.6; }
+.login-panel__button { width: 220rpx; margin: 24rpx auto 0; color: #082f57; font-size: 22rpx; font-weight: 900; background: linear-gradient(105deg,#ffe54b,#ff9b1d); border: 0; border-radius: 32rpx; }
+.login-panel__button::after, .logout-button::after { border: 0; }
+.benefit-empty { color: rgba(255,255,255,.58); }
+.empty-panel { width: 100%; padding: 30rpx 10rpx; color: #8a939d; font-size: 21rpx; text-align: center; }
+.logout-button { margin: 30rpx 0 0; color: #b34a4a; font-size: 22rpx; font-weight: 800; background: #fff; border: 1rpx solid #efd5d5; border-radius: 20rpx; }
 </style>

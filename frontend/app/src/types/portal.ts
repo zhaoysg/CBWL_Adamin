@@ -1,4 +1,5 @@
 export type AccessLevel = "public" | "login" | "member" | "premium";
+export type LockReason = "login_required" | "membership_required" | "plan_required";
 
 export interface Author {
   id: number;
@@ -31,8 +32,11 @@ export interface FeedItem {
   content_type: string;
   title: string;
   summary: string;
+  cover_url?: string | null;
   published_at: string;
   access_level: AccessLevel;
+  can_access: boolean;
+  lock_reason?: LockReason | null;
   like_count: number;
   comment_count: number;
   author: Author;
@@ -44,17 +48,19 @@ export interface MemberSummary {
   id: number;
   nickname: string;
   level_name: string;
-  expire_date: string;
+  expire_date?: string | null;
   member_no: string;
   joined_days: number;
   slogan: string;
+  is_member: boolean;
+  active_plan_codes: string[];
 }
 
 export interface HomeResponse {
   brand_name: string;
   brand_slogan: string;
   joined_count: number;
-  member: MemberSummary;
+  member?: MemberSummary | null;
   pinned: PinnedItem[];
   categories: string[];
   feed: FeedItem[];
@@ -137,7 +143,7 @@ export interface ProfileResponse {
   member: MemberSummary;
   benefits: string[];
   stats: LearningStats;
-  recent_learning: RecentLearning;
+  recent_learning?: RecentLearning | null;
   achievements: Achievement[];
   assets: AssetEntry[];
 }
@@ -152,12 +158,15 @@ export interface ContentDetailResponse {
   category: string;
   title: string;
   summary: string;
+  cover_url?: string | null;
   published_at: string;
   access_level: AccessLevel;
+  can_access: boolean;
   like_count: number;
   comment_count: number;
   reading_minutes: number;
   author: Author;
+  body_html?: string | null;
   sections: ContentSection[];
 }
 
@@ -191,8 +200,11 @@ export interface CourseDetailResponse {
 }
 
 export interface MemberPlan {
+  id: number;
   code: string;
   name: string;
+  rank: number;
+  duration_days: number;
   period_label: string;
   price: string;
   original_price?: string | null;
@@ -201,7 +213,7 @@ export interface MemberPlan {
 }
 
 export interface MemberCenterResponse {
-  member: MemberSummary;
+  member?: MemberSummary | null;
   current_benefits: string[];
   plans: MemberPlan[];
 }

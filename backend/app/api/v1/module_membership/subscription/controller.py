@@ -1,0 +1,110 @@
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, Path, Query, Security, status
+from fastapi.responses import JSONResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.common.response import ResponseSchema, SuccessResponse
+from app.core.base_schema import AuthSchema, PageResultSchema, PaginationQueryParam
+from app.core.dependencies import AuthPermission, db_getter
+from app.core.router_class import OperationLogRoute
+
+from .schema import (
+    MemberSubscriptionGrantSchema,
+    MemberSubscriptionOutSchema,
+    MemberSubscriptionQueryParam,
+    MemberSubscriptionRevokeSchema,
+    MemberSubscriptionUserOptionSchema,
+)
+from .service import MemberSubscriptionService
+
+MemberSubscriptionRouter = APIRouter(
+    route_class=OperationLogRoute,
+    prefix="/subscription",
+    tags=["会员订阅"],
+)
+
+
+@MemberSubscriptionRouter.get(
+    "/list",
+    summary="查询会员订阅",
+    response_model=ResponseSchema[PageResultSchema[MemberSubscriptionOutSchema]],
+)
+async def list_member_subscription_controller(
+    auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:query"]))],
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    page: Annotated[PaginationQueryParam, Depends()],
+    search: Annotated[MemberSubscriptionQueryParam, Query()],
+) -> JSONResponse:
+    result = await MemberSubscriptionService(auth, db).page(
+        page_no=page.page_no,
+        page_size=page.page_size,
+        search=search,
+    )
+    return SuccessResponse(data=result, msg="查询会员订阅成功")
+
+
+@MemberSubscriptionRouter.get(
+    "/user-options",
+    summary="搜索可授权用户",
+    response_model=ResponseSchema[list[MemberSubscriptionUserOptionSchema]],
+)
+async def list_member_subscription_user_options_controller(
+    auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:query"]))],
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    keyword: Annotated[str | None, Query(default=None, max_length=128)],
+    limit: Annotated[int, Query(default=20, ge=1, le=50)],
+) -> JSONResponse:
+    result = await MemberSubscriptionService(auth, db).user_options(
+        keyword=keyword,
+        limit=limit,
+    )
+    return SuccessResponse(data=result, msg="搜索可授权用户成功")
+
+
+@MemberSubscriptionRouter.get(
+    "/detail/{id}",
+    summary="获取会员订阅详情",
+    response_model=ResponseSchema[MemberSubscriptionOutSchema],
+)
+async def detail_member_subscription_controller(
+    auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:detail"]))],
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    id: Annotated[int, Path(ge=1, description="订阅ID")],
+) -> JSONResponse:
+    result = await MemberSubscriptionService(auth, db).detail(id)
+    return SuccessResponse(data=result, msg="获取会员订阅详情成功")
+
+
+@MemberSubscriptionRouter.post(
+    "/grant/manual",
+    status_code=status.HTTP_201_CREATED,
+    summary="人工授予会员订阅",
+    response_model=ResponseSchema[MemberSubscriptionOutSchema],
+)
+async def grant_member_subscription_controller(
+    auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:grant"]))],
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    data: Annotated[MemberSubscriptionGrantSchema, Body(description="人工授权参数")],
+) -> JSONResponse:
+    result = await MemberSubscriptionService(auth, db).grant_manual(data)
+    return SuccessResponse(
+        data=result,
+        msg="授予会员订阅成功",
+        status_code=status.HTTP_201_CREATED,
+    )
+
+
+@MemberSubscriptionRouter.post(
+    "/revoke/{id}",
+    summary="撤销会员订阅",
+    response_model=ResponseSchema[MemberSubscriptionOutSchema],
+)
+async def revoke_member_subscription_controller(
+    auth: Annotated[AuthSchema, Security(AuthPermission(["module_membership:subscription:revoke"]))],
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    id: Annotated[int, Path(ge=1, description="订阅ID")],
+    data: Annotated[MemberSubscriptionRevokeSchema, Body(description="撤销参数")],
+) -> JSONResponse:
+    result = await MemberSubscriptionService(auth, db).revoke(id, data)
+    return SuccessResponse(data=result, msg="撤销会员订阅成功")

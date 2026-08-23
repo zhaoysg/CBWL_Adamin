@@ -4,22 +4,38 @@ import { ref } from "vue";
 import AppIcon from "@/components/AppIcon.vue";
 import ErrorState from "@/components/ErrorState.vue";
 import LoadingState from "@/components/LoadingState.vue";
+import { ApiError } from "@/api/http";
 import { portalApi } from "@/api/portal";
 import type { ContentDetailResponse } from "@/types/portal";
 import { formatShortDate } from "@/utils/format";
+import { loginUrl } from "@/utils/auth";
 
 const data = ref<ContentDetailResponse | null>(null);
 const loading = ref(true);
 const errorMessage = ref("");
-const contentId = ref(1001);
+const contentId = ref(0);
 
 async function loadData() {
+  if (contentId.value <= 0) {
+    errorMessage.value = "内容地址无效";
+    loading.value = false;
+    return;
+  }
+
   loading.value = true;
   errorMessage.value = "";
   try {
     data.value = await portalApi.content(contentId.value);
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "内容加载失败";
+    if (error instanceof ApiError && error.statusCode === 401) {
+      uni.navigateTo({ url: loginUrl(`/pages/content/detail?id=${contentId.value}`) });
+      errorMessage.value = "请登录后继续阅读";
+    } else if (error instanceof ApiError && error.statusCode === 403) {
+      uni.navigateTo({ url: "/pages/member/index" });
+      errorMessage.value = error.message || "当前会员权益不包含该内容";
+    } else {
+      errorMessage.value = error instanceof Error ? error.message : "内容加载失败";
+    }
   } finally {
     loading.value = false;
   }
@@ -36,7 +52,7 @@ function showAction(label: string) {
 }
 
 onLoad((options) => {
-  contentId.value = Number(options?.id || 1001);
+  contentId.value = Number(options?.id || 0);
   void loadData();
 });
 </script>
@@ -76,10 +92,19 @@ onLoad((options) => {
     <ErrorState v-else-if="errorMessage" :message="errorMessage" @retry="loadData" />
 
     <view v-else-if="data" class="article-body">
-      <view v-for="(section, index) in data.sections" :key="`${section.heading}-${index}`" class="article-section">
-        <text v-if="section.heading" class="article-heading">{{ section.heading }}</text>
-        <text v-for="paragraph in section.paragraphs" :key="paragraph" class="article-paragraph">{{ paragraph }}</text>
-      </view>
+      <rich-text v-if="data.body_html" class="article-rich-text" :nodes="data.body_html" />
+      <template v-else>
+        <view
+          v-for="(section, index) in data.sections"
+          :key="`${section.heading}-${index}`"
+          class="article-section"
+        >
+          <text v-if="section.heading" class="article-heading">{{ section.heading }}</text>
+          <text v-for="paragraph in section.paragraphs" :key="paragraph" class="article-paragraph">
+            {{ paragraph }}
+          </text>
+        </view>
+      </template>
 
       <view class="risk-note">
         本文仅用于会员投研交流与教育，不构成任何投资建议。市场有风险，决策需独立判断。
@@ -239,6 +264,15 @@ onLoad((options) => {
 .article-body {
   padding: 10rpx 32rpx 40rpx;
   color: #293540;
+}
+
+.article-rich-text {
+  display: block;
+  padding-top: 30rpx;
+  color: #293540;
+  font-size: 26rpx;
+  line-height: 1.9;
+  word-break: break-word;
 }
 
 .article-section {

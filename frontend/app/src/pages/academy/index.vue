@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { portalApi } from "../../api/portal";
 import type { AcademyResponse, CourseCard } from "../../types/portal";
@@ -13,9 +13,18 @@ const loading = ref(true);
 const error = ref("");
 const activeCategory = ref("全部");
 
+const courseCategories = computed(() => [
+  "全部",
+  ...new Set((data.value?.course_categories || []).filter((item) => item && item !== "全部")),
+]);
 const visibleCourses = computed(() => {
   if (!data.value || activeCategory.value === "全部") return data.value?.courses || [];
-  return data.value.courses.filter((course) => course.level === activeCategory.value.replace("新手", ""));
+  return data.value.courses.filter((course) => course.category === activeCategory.value);
+});
+const academySummary = computed(() => {
+  const current = data.value;
+  if (!current) return "体系课程、深度专栏与专题研讨";
+  return `${current.courses.length} 门课程 · ${current.columns.length} 个专栏 · ${current.live_sessions.length} 场直播`;
 });
 
 async function load() {
@@ -23,6 +32,7 @@ async function load() {
   error.value = "";
   try {
     data.value = await portalApi.academy();
+    if (!courseCategories.value.includes(activeCategory.value)) activeCategory.value = "全部";
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "网络连接失败";
   } finally {
@@ -39,11 +49,13 @@ function openLearning() {
 }
 
 function reserveLive(title: string) {
-  uni.showToast({ title: `已记录预约：${title}`, icon: "none" });
+  uni.showToast({ title: `直播预约功能尚未开放：${title}`, icon: "none" });
 }
 
-onMounted(load);
-onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
+onShow(() => {
+  uni.hideTabBar({ animation: false, fail: () => undefined });
+  void load();
+});
 </script>
 
 <template>
@@ -57,7 +69,7 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
               <text class="academy-title">投研学院</text>
               <text class="academy-tag">专业投研体系</text>
             </view>
-            <text class="academy-subtitle">10 门体系精品课 · 7 大深度专栏 · 专题研讨直播</text>
+            <text class="academy-subtitle">{{ academySummary }}</text>
           </view>
         </view>
         <view class="academy-actions">
@@ -69,11 +81,11 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
       <view class="hero-section-title">
         <view class="live-dot" />
         <text>专题直播研讨</text>
-        <button class="archive-button"><CwIcon name="live" :size="23" tone="white" /><text>往期回看库（120+期）›</text></button>
+        <button class="archive-button"><CwIcon name="live" :size="23" tone="white" /><text>往期回看库 ›</text></button>
       </view>
 
       <CwPageState v-if="loading || error" :loading="loading" :error="error" dark @retry="load" />
-      <scroll-view v-else-if="data" class="live-scroll" scroll-x :show-scrollbar="false">
+      <scroll-view v-else-if="data?.live_sessions.length" class="live-scroll" scroll-x :show-scrollbar="false">
         <view class="live-list">
           <article v-for="session in data.live_sessions" :key="session.id" class="live-card">
             <view class="live-card__meta">
@@ -90,15 +102,16 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
           </article>
         </view>
       </scroll-view>
+      <view v-else-if="data" class="academy-empty academy-empty--dark">暂无已发布直播</view>
     </view>
 
     <view v-if="data" class="academy-content">
       <section class="content-section">
         <view class="section-heading">
           <view class="section-title"><view class="section-bar" /><text>星球深度图文专栏</text></view>
-          <text class="section-link">全 {{ data.columns.length + 5 }} 专栏 ›</text>
+          <text class="section-link">共 {{ data.columns.length }} 个专栏</text>
         </view>
-        <scroll-view class="column-scroll" scroll-x :show-scrollbar="false">
+        <scroll-view v-if="data.columns.length" class="column-scroll" scroll-x :show-scrollbar="false">
           <view class="column-list">
             <article v-for="column in data.columns" :key="column.id" class="column-card" :class="`column-card--${column.accent}`">
               <view class="column-card__top">
@@ -111,18 +124,19 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
             </article>
           </view>
         </scroll-view>
+        <view v-else class="academy-empty">专栏数据将在学院内容域上线后展示</view>
       </section>
 
       <section class="content-section course-section">
         <view class="section-heading">
           <view class="section-title"><view class="section-bar" /><text>体系化精品课</text></view>
-          <text class="section-count">共 10 门精选课程</text>
+          <text class="section-count">共 {{ data.courses.length }} 门课程</text>
         </view>
 
         <scroll-view class="course-filter-scroll" scroll-x :show-scrollbar="false">
           <view class="course-filter-list">
             <button
-              v-for="category in data.course_categories"
+              v-for="category in courseCategories"
               :key="category"
               class="course-filter"
               :class="{ 'course-filter--active': activeCategory === category }"
@@ -148,7 +162,7 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
               <text class="course-action">进入课程 ›</text>
             </view>
           </article>
-          <view v-if="!visibleCourses.length" class="empty-course">该分类课程正在筹备中</view>
+          <view v-if="!visibleCourses.length" class="empty-course">当前没有已发布课程</view>
         </view>
       </section>
     </view>
@@ -236,4 +250,6 @@ onShow(() => uni.hideTabBar({ animation: false, fail: () => undefined }));
 .mini-progress { width: 130rpx; height: 7rpx; overflow: hidden; background: #edf0f2; border-radius: 7rpx; }
 .mini-progress__bar { height: 100%; background: linear-gradient(90deg,#ffad29,#ff711c); border-radius: inherit; }
 .empty-course { padding: 60rpx; color: #87919c; text-align: center; background: #ffffff; border-radius: 22rpx; }
+.academy-empty { margin: 24rpx 30rpx 0; padding: 42rpx 24rpx; color: #87919c; font-size: 22rpx; text-align: center; background: #ffffff; border-radius: 20rpx; }
+.academy-empty--dark { color: rgba(255,255,255,.68); background: rgba(255,255,255,.08); border: 1rpx solid rgba(255,255,255,.12); }
 </style>
