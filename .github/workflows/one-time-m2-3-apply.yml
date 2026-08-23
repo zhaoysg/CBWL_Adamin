@@ -1,0 +1,211 @@
+name: One-time M2.3 verified payload apply
+
+on:
+  push:
+    branches:
+      - feature/caibuwailu-m2-3-entitlements
+    paths:
+      - ".github/workflows/one-time-m2-3-apply.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: caibuwailu-m2-3-payload-apply
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout M2.3 branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-3-entitlements
+          fetch-depth: 0
+
+      - name: Reconstruct and verify payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/m2-3-payload/part-* | base64 --decode > /tmp/caibuwailu-m2-3-payload.tar.xz
+          echo "760177deee1503e00da7dc16e729097db5d2a120928f0cfbb3f209cca1983070  /tmp/caibuwailu-m2-3-payload.tar.xz" | sha256sum --check
+          tar -tJf /tmp/caibuwailu-m2-3-payload.tar.xz >/tmp/m2-3-payload-files.txt
+          if grep -E '(^|/)\.\.(?:/|$)|^/' /tmp/m2-3-payload-files.txt; then
+            echo "Unsafe path found in payload" >&2
+            exit 1
+          fi
+          tar -xJf /tmp/caibuwailu-m2-3-payload.tar.xz -C .
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Format M2.3 Python scope
+        working-directory: backend
+        run: |
+          uv run ruff format \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth/service.py \
+            app/core/dependencies.py \
+            app/core/security.py \
+            app/alembic/versions/20260823_01_caibuwailu_member_subscription.py \
+            tests/test_api_module_membership_subscription.py \
+            tests/test_portal_entitlement.py \
+            tests/test_project_menu_seed.py
+          uv run ruff check --fix \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth/service.py \
+            app/core/dependencies.py \
+            app/core/security.py \
+            app/alembic/versions/20260823_01_caibuwailu_member_subscription.py \
+            tests/test_api_module_membership_subscription.py \
+            tests/test_portal_entitlement.py \
+            tests/test_project_menu_seed.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+
+      - name: Prepare administration dependencies
+        working-directory: frontend/web
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.3 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Generate deterministic app lockfile
+        working-directory: frontend/app
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.9.0 --activate
+          pnpm install --no-frozen-lockfile
+          pnpm install --frozen-lockfile
+
+      - name: Remove transport-only files
+        shell: bash
+        run: |
+          rm -rf .github/m2-3-payload
+          rm -f .github/workflows/one-time-m2-3-apply.yml
+          rm -f .github/workflows/one-time-m2-3-source-snapshot.yml
+          rm -f .github/m2-3-source-run.txt
+          rm -f .github/workflows/one-time-m2-exceljs-security-repair.yml
+          rm -f .github/scripts/m2_exceljs_security_repair.py
+
+      - name: Commit M2.3 source and generated lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git add -f \
+            frontend/app/pnpm-lock.yaml \
+            frontend/app/src/api/auth.ts \
+            frontend/app/src/api/http.ts \
+            frontend/app/src/pages/auth/login.vue \
+            frontend/app/src/utils/auth.ts
+          git diff --cached --check
+          git commit -m "feat(m2.3): add real subscriptions and entitlement-protected portal"
+          git push origin HEAD:feature/caibuwailu-m2-3-entitlements
+
+      - name: Validate backend JSON, compile, lint and security
+        working-directory: backend
+        run: |
+          uv run python -m json.tool sql/data/cw_menu.json >/dev/null
+          uv run python -m compileall -q \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth \
+            app/core/dependencies.py \
+            app/core/security.py \
+            app/alembic/versions/20260823_01_caibuwailu_member_subscription.py \
+            tests/test_api_module_membership_subscription.py \
+            tests/test_portal_entitlement.py \
+            tests/test_project_menu_seed.py
+          uv run ruff check --no-fix \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth/service.py \
+            app/core/dependencies.py \
+            app/core/security.py \
+            app/alembic/versions/20260823_01_caibuwailu_member_subscription.py \
+            tests/test_api_module_membership_subscription.py \
+            tests/test_portal_entitlement.py \
+            tests/test_project_menu_seed.py
+          uv run ruff format --check \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth/service.py \
+            app/core/dependencies.py \
+            app/core/security.py \
+            app/alembic/versions/20260823_01_caibuwailu_member_subscription.py \
+            tests/test_api_module_membership_subscription.py \
+            tests/test_portal_entitlement.py \
+            tests/test_project_menu_seed.py
+          uvx bandit -q -r \
+            app/api/v1/module_membership \
+            app/api/v1/module_portal \
+            app/api/v1/module_system/auth/service.py \
+            app/core/dependencies.py \
+            app/core/security.py
+
+      - name: Run M2 and M2.3 API workflows
+        working-directory: backend
+        env:
+          PORTAL_DATA_SOURCE: database
+        run: >-
+          uv run pytest -q
+          tests/test_api_module_content.py
+          tests/test_api_module_membership_subscription.py
+          tests/test_portal_entitlement.py
+          tests/test_project_menu_seed.py
+
+      - name: Run application smoke tests
+        working-directory: backend
+        run: uv run pytest -q tests/test_main.py
+
+      - name: SQLite migration round trip
+        working-directory: backend
+        env:
+          ENVIRONMENT: dev
+          DATABASE_TYPE: sqlite
+          DATABASE_NAME: /tmp/caibuwailu_m2_3_apply
+          SECRET_KEY: ci-only-secret-key-not-for-production
+        run: |
+          rm -f /tmp/caibuwailu_m2_3_apply.db
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade base
+          uv run alembic -c alembic.ini upgrade head
+
+      - name: Validate administration frontend
+        working-directory: frontend/web
+        run: |
+          corepack prepare pnpm@9.15.3 --activate
+          pnpm run type-check
+          pnpm run build:prod
+          pnpm audit --audit-level high
+
+      - name: Validate user H5 frontend
+        working-directory: frontend/app
+        env:
+          VITE_USE_MOCK: "false"
+          VITE_API_BASE_URL: /api/v1
+        run: |
+          corepack prepare pnpm@9.9.0 --activate
+          pnpm run type-check
+          pnpm run build:h5
+          pnpm audit --audit-level high
