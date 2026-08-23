@@ -44,13 +44,7 @@ class MemberSubscriptionService:
 
     @staticmethod
     def _is_effective(obj: MemberSubscriptionModel, now: datetime) -> bool:
-        return (
-            obj.status == "active"
-            and obj.revoked_at is None
-            and _utc(obj.starts_at) <= now < _utc(obj.expires_at)
-            and obj.plan.status == 0
-            and not obj.plan.is_deleted
-        )
+        return obj.status == "active" and obj.revoked_at is None and _utc(obj.starts_at) <= now < _utc(obj.expires_at) and obj.plan.status == 0 and not obj.plan.is_deleted
 
     def _serialize(self, obj: MemberSubscriptionModel, now: datetime | None = None) -> MemberSubscriptionOutSchema:
         check_time = now or datetime.now(UTC)
@@ -120,12 +114,7 @@ class MemberSubscriptionService:
             MemberPlanModel,
             MemberPlanModel.id == MemberSubscriptionModel.plan_id,
         )
-        total = await self.db.scalar(
-            select(func.count())
-            .select_from(MemberSubscriptionModel)
-            .join(MemberPlanModel, MemberPlanModel.id == MemberSubscriptionModel.plan_id)
-            .where(*conditions)
-        )
+        total = await self.db.scalar(select(func.count()).select_from(MemberSubscriptionModel).join(MemberPlanModel, MemberPlanModel.id == MemberSubscriptionModel.plan_id).where(*conditions))
         result = await self.db.execute(
             base.where(*conditions)
             .options(*self._loader_options())
@@ -187,11 +176,7 @@ class MemberSubscriptionService:
             )
 
         starts_at = data.starts_at.astimezone(UTC) if data.starts_at else now
-        expires_at = (
-            data.expires_at.astimezone(UTC)
-            if data.expires_at
-            else starts_at + timedelta(days=plan.duration_days)
-        )
+        expires_at = data.expires_at.astimezone(UTC) if data.expires_at else starts_at + timedelta(days=plan.duration_days)
         if expires_at <= starts_at:
             raise CustomException(msg="失效时间必须晚于生效时间", status_code=RET.BAD_REQUEST.code)
 

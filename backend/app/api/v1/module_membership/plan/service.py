@@ -99,11 +99,7 @@ class MemberPlanService:
         from app.api.v1.module_content.article.model import ContentPlanModel
         from app.api.v1.module_membership.subscription.model import MemberSubscriptionModel
 
-        association_count = await self.db.scalar(
-            select(func.count())
-            .select_from(ContentPlanModel)
-            .where(ContentPlanModel.plan_id.in_(unique_ids))
-        )
+        association_count = await self.db.scalar(select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids)))
         subscription_count = await self.db.scalar(
             select(func.count())
             .select_from(MemberSubscriptionModel)
