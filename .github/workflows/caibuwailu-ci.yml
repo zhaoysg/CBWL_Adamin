@@ -72,7 +72,7 @@ jobs:
 
       - name: Install mobile dependencies
         working-directory: frontend/app
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
         working-directory: frontend/app
