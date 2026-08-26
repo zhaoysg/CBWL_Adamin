@@ -16,14 +16,19 @@ def _suffix() -> str:
     return uuid4().hex[:10]
 
 
-def _current_user_id(test_client: TestClient, auth_headers: dict[str, str]) -> int:
-    response = test_client.get(
-        "/system/user/current/info",
-        headers=auth_headers,
-        params={"check_data_scope": False},
+def _create_subscription_user(test_client: TestClient, suffix: str) -> int:
+    response = test_client.post(
+        "/system/user/register",
+        json={
+            "username": f"subscription_{suffix}"[:32],
+            "password": "Subscription123!",
+            "name": f"订阅用户{suffix[:6]}",
+        },
     )
     assert response.status_code == 200, response.text
-    return int(_data(response)["id"])
+    user_id = int(_data(response)["id"])
+    assert user_id >= 1
+    return user_id
 
 
 def _create_plan(
@@ -76,7 +81,7 @@ def test_manual_subscription_is_idempotent_and_revocable(
     auth_headers: dict[str, str],
 ) -> None:
     suffix = _suffix()
-    user_id = _current_user_id(test_client, auth_headers)
+    user_id = _create_subscription_user(test_client, suffix)
     plan = _create_plan(test_client, auth_headers, suffix=suffix)
     starts_at = datetime.now(UTC) - timedelta(minutes=5)
     expires_at = starts_at + timedelta(days=15)
@@ -192,7 +197,7 @@ def test_subscription_time_boundaries(
     auth_headers: dict[str, str],
 ) -> None:
     suffix = _suffix()
-    user_id = _current_user_id(test_client, auth_headers)
+    user_id = _create_subscription_user(test_client, suffix)
     plan = _create_plan(test_client, auth_headers, suffix=suffix)
     now = datetime.now(UTC)
 
