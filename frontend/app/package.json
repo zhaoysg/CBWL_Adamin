@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.2.0",
   "private": true,
-  "packageManager": "pnpm@9.9.0",
+  "packageManager": "pnpm@9.15.3",
   "license": "MIT",
   "engines": {
     "node": ">=20.19.0 || >=22.12.0"
@@ -40,5 +40,23 @@
     "typescript": "~5.5.4",
     "vite": "^5.2.8",
     "vue-tsc": "^2.0.29"
+  },
+  "pnpm": {
+    "overrides": {
+      "@intlify/core-base@<9.1.11": "9.1.11",
+      "@intlify/devtools-if@<9.1.11": "9.1.11",
+      "@intlify/message-compiler@<9.1.11": "9.1.11",
+      "@intlify/message-resolver@<9.1.10": "9.1.11",
+      "@intlify/runtime@<9.1.11": "9.1.11",
+      "@intlify/shared@<9.1.11": "9.1.11",
+      "adm-zip@<0.6.0": "0.6.0",
+      "path-to-regexp@<0.1.13": "0.1.13",
+      "postcss@<8.5.25": "8.5.26"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-fx2h-pf6j-xcff"
+      ]
+    }
   }
 }

@@ -1,0 +1,61 @@
+name: One-time M2.3 H5 dependency repair
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/caibuwailu-m2-3-entitlements
+    paths:
+      - ".github/workflows/one-time-m2-3-app-security-lock.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-time-m2-3-app-security-lock
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Regenerate and validate H5 lockfile
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/caibuwailu-m2-3-entitlements
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.3 --activate
+
+      - name: Regenerate and validate dependency graph
+        working-directory: frontend/app
+        env:
+          VITE_USE_MOCK: "false"
+          VITE_API_BASE_URL: /api/v1
+        run: |
+          pnpm install --lockfile-only --no-frozen-lockfile
+          pnpm install --frozen-lockfile
+          pnpm run type-check
+          pnpm run build:h5
+          pnpm audit --audit-level high
+
+      - name: Commit generated lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/app/pnpm-lock.yaml
+          if git diff --cached --quiet; then
+            echo "Lockfile already matches the security policy"
+            exit 0
+          fi
+          git commit -m "fix(app): regenerate secured H5 dependency graph"
+          git push origin HEAD:feature/caibuwailu-m2-3-entitlements

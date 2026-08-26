@@ -196,13 +196,21 @@ jobs:
       - name: Enable pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@9.9.0 --activate
+          corepack prepare pnpm@9.15.3 --activate
 
       - name: Require deterministic app lockfile
         run: test -f pnpm-lock.yaml
 
       - name: Install locked dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Validate dependency exception scope
+        run: >-
+          node -e 'const fs=require("node:fs");
+          const manifest=JSON.parse(fs.readFileSync("package.json","utf8"));
+          const ignored=manifest.pnpm?.auditConfig?.ignoreGhsas ?? [];
+          if (JSON.stringify(ignored)!==JSON.stringify(["GHSA-fx2h-pf6j-xcff"]))
+          throw new Error(`Unexpected audit exception set: ${JSON.stringify(ignored)}`);'
 
       - name: Typecheck user application
         run: pnpm run type-check

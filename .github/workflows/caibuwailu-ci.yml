@@ -68,7 +68,7 @@ jobs:
       - name: Enable pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@9.9.0 --activate
+          corepack prepare pnpm@9.15.3 --activate
 
       - name: Install mobile dependencies
         working-directory: frontend/app
