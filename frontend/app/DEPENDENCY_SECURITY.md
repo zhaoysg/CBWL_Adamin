@@ -8,14 +8,15 @@ H5 构建必须使用已提交的 `pnpm-lock.yaml`、固定的 pnpm 版本和完
 
 ## 已实施的安全版本下限
 
-当前 DCloud uni-app 编译器会引入若干旧的传递依赖。项目通过 `package.json` 中的 `pnpm.overrides` 将受影响版本定向提升到已修复版本：
+当前 DCloud uni-app 编译器会引入若干旧的传递依赖。项目通过 `package.json` 中的 `pnpm.overrides` 仅提升实际受漏洞影响的依赖：
 
-- `@intlify/core-base`、`@intlify/devtools-if`、`@intlify/message-compiler`、`@intlify/message-resolver`、`@intlify/runtime`、`@intlify/shared`：统一提升至 `9.1.11`
+- `@intlify/core-base`：低于 `9.1.11` 的版本提升至 `9.1.11`
+- `@intlify/message-resolver`：低于 `9.1.11` 的版本提升至 `9.1.11`
 - `adm-zip`：低于 `0.6.0` 的版本提升至 `0.6.0`
 - `path-to-regexp`：低于 `0.1.13` 的版本提升至 `0.1.13`
 - `postcss`：低于 `8.5.25` 的版本提升至 `8.5.26`
 
-每次变更都必须通过冻结安装、Vue/TypeScript 类型检查、H5 production 构建和 `pnpm audit --audit-level high`。
+未受当前审计问题影响的同族包保持上游解析版本，避免扩大兼容性变更。每次依赖变更都必须通过冻结安装、Vue/TypeScript 类型检查、H5 production 构建和 `pnpm audit --audit-level high`。
 
 ## 临时例外：GHSA-fx2h-pf6j-xcff
 
