@@ -1,68 +1,52 @@
-<!-- 导入 Excel 文件 -->
 <template>
   <div class="inline-block">
     <ElUpload
       :auto-upload="false"
-      :accept="accept"
+      :accept="props.accept"
       :show-file-list="false"
-      :disabled="disabled"
+      :disabled="props.disabled"
       @change="handleFileChange"
     >
-      <ElButton type="primary" v-ripple :loading="loading">
-        <slot>{{ buttonText }}</slot>
+      <ElButton v-ripple type="primary" :loading="props.loading">
+        <slot>{{ props.buttonText }}</slot>
       </ElButton>
     </ElUpload>
   </div>
 </template>
 
 <script setup lang="ts">
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import type { UploadFile } from "element-plus";
 
 defineOptions({ name: "FaExcelImport" });
 
 interface Props {
-  /** 接受的文件类型 */
+  /** 接受的文件类型。ExcelJS 仅解析 OOXML 工作簿。 */
   accept?: string;
-  /** 按钮文本 */
+  /** 按钮文本。 */
   buttonText?: string;
-  /** 加载状态 */
+  /** 加载状态。 */
   loading?: boolean;
-  /** 是否禁用 */
+  /** 是否禁用。 */
   disabled?: boolean;
+  /** 单文件大小上限，单位 MB。 */
+  maxFileSizeMb?: number;
+  /** 工作表最大行数，防止超大文件耗尽浏览器资源。 */
+  maxRows?: number;
+  /** 工作表最大列数。 */
+  maxColumns?: number;
 }
 
-withDefaults(defineProps<Props>(), {
-  accept: ".xlsx, .xls",
+const props = withDefaults(defineProps<Props>(), {
+  accept: ".xlsx",
   buttonText: "导入 Excel",
   loading: false,
   disabled: false,
+  maxFileSizeMb: 10,
+  maxRows: 50000,
+  maxColumns: 512,
 });
 
-// Excel 导入工具函数
-async function importExcel(file: File): Promise<Array<Record<string, unknown>>> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-
-    reader.onload = (e) => {
-      try {
-        const data = e.target?.result;
-        const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0]!;
-        const worksheet = workbook.Sheets[firstSheetName]!;
-        const results = XLSX.utils.sheet_to_json(worksheet);
-        resolve(results as Array<Record<string, unknown>>);
-      } catch (error) {
-        reject(error);
-      }
-    };
-
-    reader.onerror = (error) => reject(error);
-    reader.readAsArrayBuffer(file);
-  });
-}
-
-// 定义 emits
 interface Emits {
   "import-success": [data: Array<Record<string, unknown>>];
   "import-error": [error: Error];
@@ -70,166 +54,111 @@ interface Emits {
 
 const emit = defineEmits<Emits>();
 
-// 处理文件导入
-const handleFileChange = async (uploadFile: UploadFile) => {
-  try {
-    if (!uploadFile.raw) return;
-    const results = await importExcel(uploadFile.raw);
-    emit("import-success", results);
-  } catch (error) {
-    emit("import-error", error as Error);
+function cellValue(cell: ExcelJS.Cell): unknown {
+  const value = cell.value;
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return value;
   }
-};
-</script>
 
-<!-- <template>
-  <div class="page-content">
-    <FaExcelImport @import-success="handleImportSuccess" @import-error="handleImportError">
-      <template #import-text>上传 Excel</template>
-    </FaExcelImport>
+  if (typeof value === "object") {
+    if ("result" in value && value.result !== undefined) {
+      return value.result;
+    }
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((item) => item.text).join("");
+    }
+    if ("text" in value && typeof value.text === "string") {
+      return value.text;
+    }
+  }
 
-    <FaExcelExport
-      :style="'margin-left: 10px'"
-      :data="tableData"
-      filename="用户数据-1"
-      sheetName="用户列表"
-      type="success"
-      :headers="headers"
-      auto-index
-      :columns="columnConfig"
-      @export-success="handleExportSuccess"
-      @export-error="handleExportError"
-      @export-progress="handleProgress"
-    >
-      导出 Excel
-    </FaExcelExport>
-
-    <ElButton type="danger" @click="handleClear" v-ripple>清除数据</ElButton>
-
-    <FaTable :data="tableData" :style="'margin-top: 10px'">
-      <ElTableColumn type="index" label="序号" width="60" />
-      <ElTableColumn
-        v-for="key in Object.keys(headers)"
-        :key="key"
-        :prop="key"
-        :label="headers[key as keyof typeof headers]"
-      />
-    </FaTable>
-  </div>
-</template>
-
-<script setup lang="ts">
-defineOptions({ name: "FaExcelImportDemo" });
-
-/**
- * 表格数据类型定义
- */
-interface TableData {
-  name: string;
-  age: number;
-  city: string;
+  return cell.text;
 }
 
-/**
- * 表格数据
- */
-const tableData = ref<TableData[]>([
-  { name: "李四", age: 20, city: "上海" },
-  { name: "张三", age: 25, city: "北京" },
-  { name: "王五", age: 30, city: "广州" },
-  { name: "赵六", age: 35, city: "深圳" },
-  { name: "孙七", age: 28, city: "杭州" },
-  { name: "周八", age: 32, city: "成都" },
-  { name: "吴九", age: 27, city: "武汉" },
-  { name: "郑十", age: 40, city: "南京" },
-  { name: "刘一", age: 22, city: "重庆" },
-  { name: "陈二", age: 33, city: "西安" },
-]);
+function buildHeaders(worksheet: ExcelJS.Worksheet): string[] {
+  const seen = new Map<string, number>();
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
 
-/**
- * 表头映射配置
- * 用于 Excel 导入导出时的字段映射
- */
-const headers = {
-  name: "姓名",
-  age: "年龄",
-  city: "城市",
-};
+  for (let columnNumber = 1; columnNumber <= worksheet.columnCount; columnNumber += 1) {
+    const baseHeader = String(cellValue(headerRow.getCell(columnNumber)) ?? "").trim();
+    if (!baseHeader) {
+      headers.push("");
+      continue;
+    }
 
-/**
- * 列配置
- * 用于 Excel 导出时的列宽和格式化
- */
-const columnConfig = {
-  name: {
-    title: "姓名",
-    width: 20,
-    formatter: (value: unknown) => (value ? String(value) : "未知"),
-  },
-  age: {
-    title: "年龄",
-    width: 10,
-    formatter: (value: unknown) => (value ? `${value}岁` : "0岁"),
-  },
-  city: {
-    title: "城市",
-    width: 12,
-    formatter: (value: unknown) => (value ? `${value}市` : "未知"),
-  },
-};
+    const occurrence = (seen.get(baseHeader) ?? 0) + 1;
+    seen.set(baseHeader, occurrence);
+    headers.push(occurrence === 1 ? baseHeader : `${baseHeader}_${occurrence}`);
+  }
 
-/**
- * 处理 Excel 导入成功
- * 将导入的数据转换为表格数据格式
- * @param data 导入的原始数据
- */
-const handleImportSuccess = (data: Array<Record<string, unknown>>) => {
-  const formattedData: TableData[] = data.map((item) => ({
-    name: String(item["姓名"] || ""),
-    age: Number(item["年龄"]) || 0,
-    city: String(item["城市"] || ""),
-  }));
-  tableData.value = formattedData;
-  ElMessage.success(`成功导入 ${formattedData.length} 条数据`);
-};
+  return headers;
+}
 
-/**
- * 处理 Excel 导入错误
- * @param error 错误对象
- */
-const handleImportError = (error: Error) => {
-  console.error("导入失败:", error);
-  ElMessage.error(`导入失败: ${error.message}`);
-};
+function worksheetToRecords(worksheet: ExcelJS.Worksheet): Array<Record<string, unknown>> {
+  if (worksheet.rowCount > props.maxRows) {
+    throw new Error(`工作表行数超过限制（最多 ${props.maxRows} 行）`);
+  }
+  if (worksheet.columnCount > props.maxColumns) {
+    throw new Error(`工作表列数超过限制（最多 ${props.maxColumns} 列）`);
+  }
 
-/**
- * 处理 Excel 导出成功
- */
-const handleExportSuccess = () => {
-  ElMessage.success("Excel 导出成功");
-};
+  const headers = buildHeaders(worksheet);
+  if (!headers.some(Boolean)) {
+    throw new Error("工作表首行未包含有效表头");
+  }
 
-/**
- * 处理 Excel 导出错误
- * @param error 错误对象
- */
-const handleExportError = (error: Error) => {
-  ElMessage.error(`导出失败: ${error.message}`);
-};
+  const records: Array<Record<string, unknown>> = [];
+  for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+    const row = worksheet.getRow(rowNumber);
+    const record: Record<string, unknown> = {};
+    let hasValue = false;
 
-/**
- * 处理导出进度
- * @param progress 导出进度百分比
- */
-const handleProgress = (progress: number) => {
-  // 进度由进度条 UI 实时显示
-};
+    headers.forEach((header, index) => {
+      if (!header) return;
+      const value = cellValue(row.getCell(index + 1));
+      record[header] = value;
+      if (value !== "" && value !== null && value !== undefined) {
+        hasValue = true;
+      }
+    });
 
-/**
- * 清空表格数据
- */
-const handleClear = () => {
-  tableData.value = [];
-  ElMessage.info("已清空数据");
-};
-</script> -->
+    if (hasValue) records.push(record);
+  }
+
+  return records;
+}
+
+async function importExcel(file: File): Promise<Array<Record<string, unknown>>> {
+  if (!/\.xlsx$/i.test(file.name)) {
+    throw new Error("仅支持 .xlsx 格式的 Excel 文件");
+  }
+
+  const maxBytes = props.maxFileSizeMb * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error(`文件超过 ${props.maxFileSizeMb} MB 限制`);
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await file.arrayBuffer());
+
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    throw new Error("Excel 文件不包含可读取的工作表");
+  }
+
+  return worksheetToRecords(worksheet);
+}
+
+async function handleFileChange(uploadFile: UploadFile) {
+  if (!uploadFile.raw) return;
+
+  try {
+    emit("import-success", await importExcel(uploadFile.raw));
+  } catch (error) {
+    emit("import-error", error instanceof Error ? error : new Error("Excel 导入失败"));
+  }
+}
+</script>

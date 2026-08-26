@@ -1,7 +1,8 @@
 import json
+from copy import deepcopy
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.module_system.dept.model import DeptModel
@@ -34,6 +35,33 @@ class InitializeData:
 
     # 树形模型：JSON 含嵌套 children，需递归创建对象
     _RECURSIVE_TABLES: set[str] = {"sys_menu", "sys_dept"}
+
+    _MENU_UPDATE_FIELDS: tuple[str, ...] = (
+        "name",
+        "type",
+        "order",
+        "permission",
+        "icon",
+        "route_name",
+        "route_path",
+        "component_path",
+        "redirect",
+        "hidden",
+        "keep_alive",
+        "always_show",
+        "title",
+        "params",
+        "affix",
+        "link",
+        "is_iframe",
+        "is_hide_tab",
+        "active_path",
+        "show_badge",
+        "show_text_badge",
+        "scope",
+        "status",
+        "description",
+    )
 
     async def init_db(self) -> None:
         """建表并导入种子数据"""
@@ -94,6 +122,10 @@ class InitializeData:
                 logger.error(f"❌️ 初始化 {table_name} 表数据失败")
                 raise
 
+        # 项目菜单采用独立、幂等的补充种子。即使 sys_menu 已有历史数据，
+        # 也会按路由身份补齐页面、按权限身份补齐按钮。
+        await self.__ensure_project_menus(db)
+
     @staticmethod
     def __create_objects_with_children(data: list[dict], model_class: type) -> list:
         """递归创建树形模型实例，处理嵌套 children 并注入 parent_id"""
@@ -109,6 +141,65 @@ class InitializeData:
             return obj
 
         return [_create(item) for item in data]
+
+    async def __ensure_project_menus(self, db: AsyncSession) -> None:
+        menu_data = await self.__load_json("cw_menu")
+        if not menu_data:
+            return
+
+        for root in menu_data:
+            await self.__upsert_menu_node(db, deepcopy(root), parent_id=None)
+        logger.info("✅️ 财不外露项目菜单与按钮权限已校验")
+
+    @staticmethod
+    def __menu_identity(node_data: dict[str, Any], parent_id: int | None):
+        """构建稳定且不跨菜单类型碰撞的幂等身份。"""
+        permission = node_data.get("permission")
+        route_name = node_data.get("route_name")
+        route_path = node_data.get("route_path")
+        menu_type = node_data.get("type")
+
+        if menu_type == 3:
+            if not permission:
+                raise ValueError("按钮菜单必须配置 permission")
+            return and_(MenuModel.type == 3, MenuModel.permission == permission)
+
+        if route_name:
+            return and_(MenuModel.type == menu_type, MenuModel.route_name == route_name)
+
+        parent_condition = MenuModel.parent_id.is_(None) if parent_id is None else MenuModel.parent_id == parent_id
+        return and_(
+            MenuModel.type == menu_type,
+            MenuModel.route_path == route_path,
+            parent_condition,
+        )
+
+    async def __upsert_menu_node(
+        self,
+        db: AsyncSession,
+        node_data: dict[str, Any],
+        parent_id: int | None,
+    ) -> MenuModel:
+        children = node_data.pop("children", [])
+        identity = self.__menu_identity(node_data, parent_id)
+        menu = await db.scalar(select(MenuModel).where(identity).limit(1))
+        payload = {field: node_data.get(field) for field in self._MENU_UPDATE_FIELDS if field in node_data}
+
+        if menu is None:
+            menu = MenuModel(**payload, parent_id=parent_id)
+            db.add(menu)
+            await db.flush()
+        else:
+            if menu.id == parent_id:
+                raise ValueError(f"菜单 {menu.id} 不能成为自己的父节点")
+            for field, value in payload.items():
+                setattr(menu, field, value)
+            menu.parent_id = parent_id
+            await db.flush()
+
+        for child in children:
+            await self.__upsert_menu_node(db, deepcopy(child), parent_id=menu.id)
+        return menu
 
     async def __load_json(self, filename: str) -> list[dict]:
         """读取并解析种子数据 JSON 文件"""

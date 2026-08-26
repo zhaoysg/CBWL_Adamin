@@ -1,91 +1,83 @@
-<!-- 导出 Excel 文件 -->
 <template>
   <ElButton
-    :type="type"
-    :size="size"
-    :loading="isExporting"
-    :disabled="disabled || !hasData"
     v-ripple
+    :type="props.type"
+    :size="props.size"
+    :loading="isExporting"
+    :disabled="props.disabled || !hasData"
     @click="handleExport"
   >
     <template #loading>
       <ElIcon class="is-loading">
         <Loading />
       </ElIcon>
-      {{ loadingText }}
+      {{ props.loadingText }}
     </template>
-    <slot>{{ buttonText }}</slot>
+    <slot>{{ props.buttonText }}</slot>
   </ElButton>
 </template>
 
 <script setup lang="ts">
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import FileSaver from "file-saver";
-import { ref, computed, nextTick } from "vue";
 import { Loading } from "@element-plus/icons-vue";
-import type { ButtonType } from "element-plus";
+import { ElMessage, type ButtonType } from "element-plus";
 import { useThrottleFn } from "@vueuse/core";
+import { computed, nextTick, readonly, ref } from "vue";
 
 defineOptions({ name: "FaExcelExport" });
 
-/** 导出数据类型 */
 type ExportValue = string | number | boolean | null | undefined | Date;
 
 interface ExportData {
   [key: string]: ExportValue;
 }
 
-/** 列配置 */
 interface ColumnConfig {
-  /** 列标题 */
+  /** 列标题。 */
   title: string;
-  /** 列宽度 */
+  /** 列宽度。 */
   width?: number;
-  /** 数据格式化函数 */
+  /** 数据格式化函数。 */
   formatter?: (value: ExportValue, row: ExportData, index: number) => string;
 }
 
-/** 导出配置选项 */
 interface Props {
-  /** 数据源 */
+  /** 数据源。 */
   data: ExportData[];
-  /** 文件名（不含扩展名） */
+  /** 文件名，不含扩展名。 */
   filename?: string;
-  /** 工作表名称 */
+  /** 工作表名称。 */
   sheetName?: string;
-  /** 按钮类型 */
+  /** 按钮类型。 */
   type?: ButtonType;
-  /** 按钮尺寸 */
+  /** 按钮尺寸。 */
   size?: "large" | "default" | "small";
-  /** 是否禁用 */
+  /** 是否禁用。 */
   disabled?: boolean;
-  /** 按钮文本 */
+  /** 按钮文本。 */
   buttonText?: string;
-  /** 加载中文本 */
+  /** 加载中文本。 */
   loadingText?: string;
-  /** 是否自动添加序号列 */
+  /** 是否自动添加序号列。 */
   autoIndex?: boolean;
-  /** 序号列标题 */
+  /** 序号列标题。 */
   indexColumnTitle?: string;
-  /** 列配置映射 */
+  /** 列配置映射。 */
   columns?: Record<string, ColumnConfig>;
-  /** 表头映射（简化版本，向后兼容） */
+  /** 表头映射，保留原有简化配置。 */
   headers?: Record<string, string>;
-  /** 最大导出行数 */
+  /** 最大导出行数。 */
   maxRows?: number;
-  /** 是否显示成功消息 */
+  /** 是否显示成功消息。 */
   showSuccessMessage?: boolean;
-  /** 是否显示错误消息 */
+  /** 是否显示错误消息。 */
   showErrorMessage?: boolean;
-  /** 工作簿配置 */
+  /** 工作簿元数据。 */
   workbookOptions?: {
-    /** 创建者 */
     creator?: string;
-    /** 最后修改者 */
     lastModifiedBy?: string;
-    /** 创建时间 */
     created?: Date;
-    /** 修改时间 */
     modified?: Date;
   };
 }
@@ -117,225 +109,168 @@ interface Emits {
 
 const emit = defineEmits<Emits>();
 
-/** 导出错误类型 */
 class ExportError extends Error {
   constructor(
     message: string,
     public code: string,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = "ExportError";
   }
 }
 
-const isExporting = ref(false);
+interface ResolvedColumn {
+  key: string;
+  title: string;
+  width?: number;
+}
 
-/** 是否有数据可导出 */
+const isExporting = ref(false);
 const hasData = computed(() => Array.isArray(props.data) && props.data.length > 0);
 
-/** 验证导出数据 */
-const validateData = (data: ExportData[]): void => {
+function validateData(data: ExportData[]) {
   if (!Array.isArray(data)) {
     throw new ExportError("数据必须是数组格式", "INVALID_DATA_TYPE");
   }
-
   if (data.length === 0) {
     throw new ExportError("没有可导出的数据", "NO_DATA");
   }
-
   if (data.length > props.maxRows) {
-    throw new ExportError(`数据行数超过限制（${props.maxRows}行）`, "EXCEED_MAX_ROWS", {
+    throw new ExportError(`数据行数超过限制（${props.maxRows} 行）`, "EXCEED_MAX_ROWS", {
       currentRows: data.length,
       maxRows: props.maxRows,
     });
   }
-};
+}
 
-/** 格式化单元格值 */
-const formatCellValue = (
-  value: ExportValue,
-  key: string,
-  row: ExportData,
-  index: number
-): string => {
-  // 使用列配置的格式化函数
-  const column = props.columns[key];
-  if (column?.formatter) {
-    return column.formatter(value, row, index);
-  }
-
-  // 处理特殊值
-  if (value === null || value === undefined) {
-    return "";
-  }
-
-  if (value instanceof Date) {
-    return value.toLocaleDateString("zh-CN");
-  }
-
-  if (typeof value === "boolean") {
-    return value ? "是" : "否";
-  }
-
+function formatCellValue(value: ExportValue, key: string, row: ExportData, index: number): string {
+  const formatter = props.columns[key]?.formatter;
+  if (formatter) return formatter(value, row, index);
+  if (value === null || value === undefined) return "";
+  if (value instanceof Date) return value.toLocaleString("zh-CN");
+  if (typeof value === "boolean") return value ? "是" : "否";
   return String(value);
-};
+}
 
-/** 处理数据 */
-const processData = (data: ExportData[]): Record<string, string>[] => {
-  const processedData = data.map((item, index) => {
-    const processedItem: Record<string, string> = {};
+function resolveColumns(data: ExportData[]): ResolvedColumn[] {
+  const orderedKeys: string[] = [];
+  const seen = new Set<string>();
 
-    // 添加序号列
-    if (props.autoIndex) {
-      processedItem[props.indexColumnTitle] = String(index + 1);
-    }
-
-    // 处理数据列
-    Object.entries(item).forEach(([key, value]) => {
-      // 获取列标题
-      let columnTitle = key;
-      if (props.columns[key]?.title) {
-        columnTitle = props.columns[key].title;
-      } else if (props.headers[key]) {
-        columnTitle = props.headers[key];
+  data.forEach((row) => {
+    Object.keys(row).forEach((key) => {
+      if (!seen.has(key)) {
+        seen.add(key);
+        orderedKeys.push(key);
       }
-
-      // 格式化值
-      processedItem[columnTitle] = formatCellValue(value, key, item, index);
     });
-
-    return processedItem;
   });
 
-  return processedData;
-};
+  return orderedKeys.map((key) => ({
+    key,
+    title: props.columns[key]?.title || props.headers[key] || key,
+    width: props.columns[key]?.width,
+  }));
+}
 
-/** 计算列宽度 */
-const calculateColumnWidths = (data: Record<string, string>[]): XLSX.ColInfo[] => {
-  if (data.length === 0) return [];
-
-  const sampleSize = Math.min(data.length, 100); // 只取前100行计算列宽
-  const columns = Object.keys(data[0]!);
-
-  return columns.map((column) => {
-    // 使用配置的列宽度
-    const configWidth = Object.values(props.columns).find((col) => col.title === column)?.width;
-
-    if (configWidth) {
-      return { wch: configWidth };
-    }
-
-    // 自动计算列宽度
-    const maxLength = Math.max(
-      column.length, // 标题长度
-      ...data.slice(0, sampleSize).map((row) => String(row[column] || "").length)
-    );
-
-    // 限制最小和最大宽度
-    const width = Math.min(Math.max(maxLength + 2, 8), 50);
-    return { wch: width };
-  });
-};
-
-/** 导出到 Excel */
-const exportToExcel = async (
-  data: ExportData[],
-  filename: string,
-  sheetName: string
-): Promise<void> => {
-  try {
-    emit("export-progress", 10);
-
-    // 处理数据
-    const processedData = processData(data);
-    emit("export-progress", 30);
-
-    // 创建工作簿
-    const workbook = XLSX.utils.book_new();
-
-    // 设置工作簿属性
-    if (props.workbookOptions) {
-      workbook.Props = {
-        Title: filename,
-        Subject: "数据导出",
-        Author: props.workbookOptions.creator || "Art Design Pro",
-        Manager: props.workbookOptions.lastModifiedBy || "",
-        Company: "系统导出",
-        Category: "数据",
-        Keywords: "excel,export,data",
-        Comments: "由系统自动生成",
-        CreatedDate: props.workbookOptions.created || new Date(),
-        ModifiedDate: props.workbookOptions.modified || new Date(),
-      };
-    }
-
-    emit("export-progress", 50);
-
-    // 创建工作表
-    const worksheet = XLSX.utils.json_to_sheet(processedData);
-
-    // 设置列宽度
-    worksheet["!cols"] = calculateColumnWidths(processedData);
-
-    emit("export-progress", 70);
-
-    // 添加工作表到工作簿
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-
-    emit("export-progress", 85);
-
-    // 生成 Excel 文件
-    const excelBuffer = XLSX.write(workbook, {
-      bookType: "xlsx",
-      type: "array",
-      compression: true,
-    });
-
-    // 创建 Blob 并下载
-    const blob = new Blob([excelBuffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    });
-
-    emit("export-progress", 95);
-
-    // 使用时间戳确保文件名唯一
-    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const finalFilename = `${filename}_${timestamp}.xlsx`;
-
-    FileSaver.saveAs(blob, finalFilename);
-
-    emit("export-progress", 100);
-
-    // 等待下载开始
-    await nextTick();
-
-    return Promise.resolve();
-  } catch (error) {
-    throw new ExportError(`Excel 导出失败: ${(error as Error).message}`, "EXPORT_FAILED", error);
+function calculateWidth(column: ResolvedColumn, data: ExportData[], columnIndex: number): number {
+  if (column.width !== undefined) {
+    return Math.min(Math.max(column.width, 8), 50);
   }
-};
 
-/** 处理导出 */
+  const sampleSize = Math.min(data.length, 100);
+  let maxLength = column.title.length;
+  for (let index = 0; index < sampleSize; index += 1) {
+    const row = data[index]!;
+    maxLength = Math.max(
+      maxLength,
+      formatCellValue(row[column.key], column.key, row, index).length
+    );
+  }
+
+  // 中文字符在表格中通常接近两个拉丁字符宽度，保留适度余量。
+  const estimated = Math.max(maxLength + 2, columnIndex === 0 ? 10 : 8);
+  return Math.min(estimated, 50);
+}
+
+function safeWorksheetName(value: string): string {
+  const normalized = value.replace(/[\\/*?:\[\]]/g, "_").trim();
+  return (normalized || "Sheet1").slice(0, 31);
+}
+
+function safeFileName(value: string): string {
+  const normalized = value.replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_").trim();
+  return normalized || "export";
+}
+
+async function exportToExcel(data: ExportData[], filename: string, sheetName: string) {
+  emit("export-progress", 10);
+
+  const columns = resolveColumns(data);
+  if (!columns.length && !props.autoIndex) {
+    throw new ExportError("导出数据不包含可用字段", "NO_COLUMNS");
+  }
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = props.workbookOptions.creator || "财不外露";
+  workbook.lastModifiedBy = props.workbookOptions.lastModifiedBy || workbook.creator;
+  workbook.created = props.workbookOptions.created || new Date();
+  workbook.modified = props.workbookOptions.modified || new Date();
+
+  const worksheet = workbook.addWorksheet(safeWorksheetName(sheetName), {
+    views: [{ state: "frozen", ySplit: 1 }],
+  });
+
+  const resolvedHeaders = [
+    ...(props.autoIndex ? [props.indexColumnTitle] : []),
+    ...columns.map((column) => column.title),
+  ];
+  worksheet.addRow(resolvedHeaders);
+  worksheet.getRow(1).font = { bold: true };
+
+  emit("export-progress", 30);
+
+  data.forEach((row, rowIndex) => {
+    const values = columns.map((column) =>
+      formatCellValue(row[column.key], column.key, row, rowIndex)
+    );
+    worksheet.addRow([...(props.autoIndex ? [rowIndex + 1] : []), ...values]);
+  });
+
+  let offset = 1;
+  if (props.autoIndex) {
+    worksheet.getColumn(1).width = Math.min(Math.max(props.indexColumnTitle.length + 2, 8), 16);
+    offset = 2;
+  }
+  columns.forEach((column, index) => {
+    worksheet.getColumn(index + offset).width = calculateWidth(column, data, index);
+  });
+
+  emit("export-progress", 75);
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const finalFilename = `${safeFileName(filename)}_${timestamp}.xlsx`;
+
+  emit("export-progress", 95);
+  FileSaver.saveAs(blob, finalFilename);
+  emit("export-progress", 100);
+  await nextTick();
+}
+
 const handleExport = useThrottleFn(async () => {
   if (isExporting.value) return;
 
   isExporting.value = true;
-
   try {
-    // 验证数据
     validateData(props.data);
-
-    // 触发导出前事件
     emit("before-export", props.data);
-
-    // 执行导出
     await exportToExcel(props.data, props.filename, props.sheetName);
-
-    // 触发成功事件
     emit("export-success", props.filename, props.data.length);
 
-    // 显示成功消息
     if (props.showSuccessMessage) {
       ElMessage.success({
         message: `成功导出 ${props.data.length} 条数据`,
@@ -346,19 +281,19 @@ const handleExport = useThrottleFn(async () => {
     const exportError =
       error instanceof ExportError
         ? error
-        : new ExportError(`导出失败: ${(error as Error).message}`, "UNKNOWN_ERROR", error);
+        : new ExportError(
+            `导出失败: ${error instanceof Error ? error.message : "未知错误"}`,
+            "UNKNOWN_ERROR",
+            error
+          );
 
-    // 触发错误事件
     emit("export-error", exportError);
-
-    // 显示错误消息
     if (props.showErrorMessage) {
       ElMessage.error({
         message: exportError.message,
         duration: 5000,
       });
     }
-
     console.error("Excel 导出错误:", exportError);
   } finally {
     isExporting.value = false;
@@ -366,7 +301,6 @@ const handleExport = useThrottleFn(async () => {
   }
 }, 1000);
 
-// 暴露方法供父组件调用
 defineExpose({
   exportData: handleExport,
   isExporting: readonly(isExporting),
@@ -389,155 +323,3 @@ defineExpose({
   }
 }
 </style>
-
-<!-- <template>
-  <div class="page-content">
-    <FaExcelImport @import-success="handleImportSuccess" @import-error="handleImportError">
-      <template #import-text>上传 Excel</template>
-    </FaExcelImport>
-
-    <FaExcelExport
-      :style="'margin-left: 10px'"
-      :data="tableData"
-      filename="用户数据-1"
-      sheetName="用户列表"
-      type="success"
-      :headers="headers"
-      auto-index
-      :columns="columnConfig"
-      @export-success="handleExportSuccess"
-      @export-error="handleExportError"
-      @export-progress="handleProgress"
-    >
-      导出 Excel
-    </FaExcelExport>
-
-    <ElButton type="danger" @click="handleClear" v-ripple>清除数据</ElButton>
-
-    <FaTable :data="tableData" :style="'margin-top: 10px'">
-      <ElTableColumn type="index" label="序号" width="60" />
-      <ElTableColumn
-        v-for="key in Object.keys(headers)"
-        :key="key"
-        :prop="key"
-        :label="headers[key as keyof typeof headers]"
-      />
-    </FaTable>
-  </div>
-</template>
-
-<script setup lang="ts">
-defineOptions({ name: "FaExcelExportDemo" });
-
-/**
- * 表格数据类型定义
- */
-interface TableData {
-  name: string;
-  age: number;
-  city: string;
-}
-
-/**
- * 表格数据
- */
-const tableData = ref<TableData[]>([
-  { name: "李四", age: 20, city: "上海" },
-  { name: "张三", age: 25, city: "北京" },
-  { name: "王五", age: 30, city: "广州" },
-  { name: "赵六", age: 35, city: "深圳" },
-  { name: "孙七", age: 28, city: "杭州" },
-  { name: "周八", age: 32, city: "成都" },
-  { name: "吴九", age: 27, city: "武汉" },
-  { name: "郑十", age: 40, city: "南京" },
-  { name: "刘一", age: 22, city: "重庆" },
-  { name: "陈二", age: 33, city: "西安" },
-]);
-
-/**
- * 表头映射配置
- * 用于 Excel 导入导出时的字段映射
- */
-const headers = {
-  name: "姓名",
-  age: "年龄",
-  city: "城市",
-};
-
-/**
- * 列配置
- * 用于 Excel 导出时的列宽和格式化
- */
-const columnConfig = {
-  name: {
-    title: "姓名",
-    width: 20,
-    formatter: (value: unknown) => (value ? String(value) : "未知"),
-  },
-  age: {
-    title: "年龄",
-    width: 10,
-    formatter: (value: unknown) => (value ? `${value}岁` : "0岁"),
-  },
-  city: {
-    title: "城市",
-    width: 12,
-    formatter: (value: unknown) => (value ? `${value}市` : "未知"),
-  },
-};
-
-/**
- * 处理 Excel 导入成功
- * 将导入的数据转换为表格数据格式
- * @param data 导入的原始数据
- */
-const handleImportSuccess = (data: Array<Record<string, unknown>>) => {
-  const formattedData: TableData[] = data.map((item) => ({
-    name: String(item["姓名"] || ""),
-    age: Number(item["年龄"]) || 0,
-    city: String(item["城市"] || ""),
-  }));
-  tableData.value = formattedData;
-  ElMessage.success(`成功导入 ${formattedData.length} 条数据`);
-};
-
-/**
- * 处理 Excel 导入错误
- * @param error 错误对象
- */
-const handleImportError = (error: Error) => {
-  console.error("导入失败:", error);
-  ElMessage.error(`导入失败: ${error.message}`);
-};
-
-/**
- * 处理 Excel 导出成功
- */
-const handleExportSuccess = () => {
-  ElMessage.success("Excel 导出成功");
-};
-
-/**
- * 处理 Excel 导出错误
- * @param error 错误对象
- */
-const handleExportError = (error: Error) => {
-  ElMessage.error(`导出失败: ${error.message}`);
-};
-
-/**
- * 处理导出进度
- * @param progress 导出进度百分比
- */
-const handleProgress = (progress: number) => {
-  // 进度由进度条 UI 实时显示
-};
-
-/**
- * 清空表格数据
- */
-const handleClear = () => {
-  tableData.value = [];
-  ElMessage.info("已清空数据");
-};
-</script> -->

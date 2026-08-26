@@ -1,0 +1,368 @@
+name: 财不外露 M2 内容运营 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/caibuwailu-m2-membership
+    paths:
+      - "backend/app/api/v1/module_content/**"
+      - "backend/app/api/v1/module_membership/**"
+      - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
+      - "backend/app/init_app.py"
+      - "backend/app/scripts/initialize.py"
+      - "backend/sql/data/cw_menu.json"
+      - "backend/tests/test_api_module_content.py"
+      - "backend/tests/test_project_menu_seed.py"
+      - "backend/tests/test_main.py"
+      - "frontend/web/package.json"
+      - "frontend/web/pnpm-lock.yaml"
+      - "frontend/web/vite.config.ts"
+      - "frontend/web/scripts/generate-types.ts"
+      - "frontend/web/src/api/module_content/**"
+      - "frontend/web/src/api/module_membership/**"
+      - "frontend/web/src/views/module_content/**"
+      - "frontend/web/src/views/module_membership/**"
+      - "frontend/web/src/components/forms/fa-excel-import/index.vue"
+      - "frontend/web/src/components/forms/fa-excel-export/index.vue"
+      - ".github/workflows/caibuwailu-m2-ci.yml"
+  pull_request:
+    branches:
+      - feature/caibuwailu-m1
+    paths:
+      - "backend/app/api/v1/module_content/**"
+      - "backend/app/api/v1/module_membership/**"
+      - "backend/app/alembic/versions/20260822_01_caibuwailu_content_admin.py"
+      - "backend/app/init_app.py"
+      - "backend/app/scripts/initialize.py"
+      - "backend/sql/data/cw_menu.json"
+      - "backend/tests/test_api_module_content.py"
+      - "backend/tests/test_project_menu_seed.py"
+      - "backend/tests/test_main.py"
+      - "frontend/web/package.json"
+      - "frontend/web/pnpm-lock.yaml"
+      - "frontend/web/vite.config.ts"
+      - "frontend/web/scripts/generate-types.ts"
+      - "frontend/web/src/api/module_content/**"
+      - "frontend/web/src/api/module_membership/**"
+      - "frontend/web/src/views/module_content/**"
+      - "frontend/web/src/views/module_membership/**"
+      - "frontend/web/src/components/forms/fa-excel-import/index.vue"
+      - "frontend/web/src/components/forms/fa-excel-export/index.vue"
+      - ".github/workflows/caibuwailu-m2-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m2-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: 后端契约、安全扫描与 SQLite 迁移
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Validate project menu JSON
+        run: uv run python -m json.tool sql/data/cw_menu.json >/dev/null
+
+      - name: Compile changed backend modules
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
+          tests/test_main.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
+          tests/test_main.py
+          app/init_app.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/alembic/versions/20260822_01_caibuwailu_content_admin.py
+          app/scripts/initialize.py
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
+          tests/test_main.py
+          app/init_app.py
+
+      - name: Security scan changed backend modules
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_content
+          app/api/v1/module_membership
+          app/scripts/initialize.py
+
+      - name: Run M2 API and menu workflow tests
+        run: >-
+          uv run pytest -q
+          tests/test_api_module_content.py
+          tests/test_project_menu_seed.py
+
+      - name: Run application smoke tests
+        run: uv run pytest -q tests/test_main.py
+
+      - name: SQLite migration round trip
+        env:
+          ENVIRONMENT: dev
+          DATABASE_TYPE: sqlite
+          DATABASE_NAME: /tmp/caibuwailu_m2_migration
+          SECRET_KEY: ci-only-secret-key-not-for-production
+        run: |
+          rm -f /tmp/caibuwailu_m2_migration.db
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade base
+          uv run alembic -c alembic.ini upgrade head
+
+  admin-web-build:
+    name: 财不外露管理端类型检查、构建与完整依赖审计
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend/web
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.3 --activate
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify SheetJS removal and dependency policy
+        run: |
+          node <<'NODE'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+
+          if (pkg.dependencies.xlsx || pkg.devDependencies.xlsx) {
+            throw new Error("The vulnerable xlsx package is still declared");
+          }
+
+          const importPattern = /(?:from\s+|require\(\s*)["']xlsx["']/;
+          const findings = [];
+          function walk(directory) {
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+              const target = path.join(directory, entry.name);
+              if (entry.isDirectory()) {
+                walk(target);
+              } else if (/\.(?:ts|tsx|js|jsx|vue)$/.test(entry.name)) {
+                const content = fs.readFileSync(target, "utf8");
+                if (importPattern.test(content)) findings.push(target);
+              }
+            }
+          }
+          walk("src");
+
+          const viteConfig = fs.readFileSync("vite.config.ts", "utf8");
+          if (viteConfig.includes('id.includes("xlsx")') || /^\s*["']xlsx["'],?\s*$/m.test(viteConfig)) {
+            findings.push("vite.config.ts");
+          }
+          if (findings.length) {
+            throw new Error(`SheetJS references remain: ${findings.join(", ")}`);
+          }
+          NODE
+
+      - name: Check formatting of supply-chain changes
+        run: >-
+          pnpm exec prettier --check
+          package.json
+          vite.config.ts
+          scripts/generate-types.ts
+          src/components/forms/fa-excel-import/index.vue
+          src/components/forms/fa-excel-export/index.vue
+
+      - name: Typecheck administration frontend
+        run: pnpm run type-check
+
+      - name: Build production administration frontend
+        run: pnpm run build:prod
+
+      - name: Audit complete dependency graph
+        run: pnpm audit --audit-level high
+
+  mysql-migration:
+    name: MySQL 8.4 迁移往返
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: root
+      DATABASE_PASSWORD: root
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing-system user table fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INT PRIMARY KEY) ENGINE=InnoDB"))
+          PY
+
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade base
+          uv run alembic -c alembic.ini upgrade head
+
+      - name: Assert MySQL tables
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          expected = {"cw_member_plan", "cw_content_category", "cw_content", "cw_content_plan"}
+          actual = set(inspect(engine).get_table_names())
+          missing = expected - actual
+          assert not missing, f"missing tables: {sorted(missing)}"
+          PY
+
+  postgres-migration:
+    name: PostgreSQL 16 迁移往返
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: caibuwailu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d caibuwailu"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: postgres
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing-system user table fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INTEGER PRIMARY KEY)"))
+          PY
+
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade base
+          uv run alembic -c alembic.ini upgrade head
+
+      - name: Assert PostgreSQL tables
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          expected = {"cw_member_plan", "cw_content_category", "cw_content", "cw_content_plan"}
+          actual = set(inspect(engine).get_table_names())
+          missing = expected - actual
+          assert not missing, f"missing tables: {sorted(missing)}"
+          PY
