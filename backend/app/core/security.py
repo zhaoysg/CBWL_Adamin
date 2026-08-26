@@ -94,7 +94,7 @@ class CustomOAuth2PasswordRequestForm(OAuth2PasswordRequestForm):
 
 
 # OAuth2认证配置
-AUTH_TOKEN_URL = "system/auth/login"
+AUTH_TOKEN_URL = "system/auth/login"  # nosec B105 - OAuth2 endpoint path, not a credential
 OAuth2Schema = CustomOAuth2PasswordBearer(token_url=AUTH_TOKEN_URL, description="认证")
 OptionalOAuth2Schema = CustomOAuth2PasswordBearer(
     token_url=AUTH_TOKEN_URL,
