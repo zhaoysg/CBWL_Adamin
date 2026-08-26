@@ -1,0 +1,55 @@
+{
+  "pages": [
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "财不外露"
+      }
+    },
+    {
+      "path": "pages/academy/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "投研学院"
+      }
+    },
+    {
+      "path": "pages/mine/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "个人中心"
+      }
+    },
+    {
+      "path": "pages/content/detail",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "深度内容"
+      }
+    },
+    {
+      "path": "pages/course/detail",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "课程详情"
+      }
+    },
+    {
+      "path": "pages/member/index",
+      "style": {
+        "navigationStyle": "custom",
+        "navigationBarTitleText": "会员中心"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationStyle": "custom",
+    "backgroundColor": "#f4f6f9",
+    "backgroundTextStyle": "dark",
+    "enablePullDownRefresh": false,
+    "app-plus": {
+      "bounce": "none"
+    }
+  }
+}
