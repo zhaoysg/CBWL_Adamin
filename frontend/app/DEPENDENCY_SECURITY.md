@@ -30,6 +30,18 @@ H5 构建必须使用已提交的 `pnpm-lock.yaml`、固定的 pnpm 版本和完
 - 开发环境不得使用 `--host` 或 `server.host` 将当前 Vite 开发服务器暴露到不受信任网络。
 - `auditConfig.ignoreGhsas` 只允许包含 `GHSA-fx2h-pf6j-xcff`，不允许使用包级、严重度级或通配符豁免。
 
+## 已验证基线
+
+锁文件由 GitHub Actions 在干净 Ubuntu Runner 中使用 Node.js `22.16.0` 与 pnpm `9.15.3` 再生成。提交 `6a09df1e6e048ccba72755246c0e7ef447113435` 已完成：
+
+- 锁文件再生成
+- `pnpm install --frozen-lockfile`
+- Vue / TypeScript 类型检查
+- H5 production 构建
+- `pnpm audit --audit-level high`
+
+一次性锁文件修复工作流在完成验证后已删除；后续仅保留正式 M2.3 CI 的冻结安装、构建和审计闸门。
+
 ## 退出条件
 
 当 DCloud 稳定发布线正式支持包含该修复的 Vite 主版本后，必须在同一变更中完成以下事项：
