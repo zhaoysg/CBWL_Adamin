@@ -1,5 +1,5 @@
 from copy import deepcopy
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from .schema import (
@@ -29,7 +29,7 @@ from .schema import (
 
 
 def _dt(hour: int, minute: int = 0) -> datetime:
-    return datetime(2026, 8, 22, hour, minute, tzinfo=timezone.utc)
+    return datetime(2026, 8, 22, hour, minute, tzinfo=UTC)
 
 
 MEMBER = MemberSummary(
@@ -347,16 +347,22 @@ class PortalService:
             ],
             plans=[
                 MemberPlan(
+                    id=1,
                     code="month",
                     name="月度会员",
+                    rank=10,
+                    duration_days=30,
                     period_label="连续 30 天",
                     price=Decimal("99.00"),
                     original_price=Decimal("129.00"),
                     benefits=["会员专栏", "直播回看"],
                 ),
                 MemberPlan(
+                    id=2,
                     code="year",
                     name="星球尊享年会员",
+                    rank=20,
+                    duration_days=365,
                     period_label="连续 365 天",
                     price=Decimal("899.00"),
                     original_price=Decimal("1188.00"),

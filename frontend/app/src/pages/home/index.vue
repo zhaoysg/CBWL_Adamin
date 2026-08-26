@@ -1,17 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import { onShow } from "@dcloudio/uni-app";
 import { portalApi } from "../../api/portal";
-import type { HomeResponse } from "../../types/portal";
+import type { FeedItem, HomeResponse, PinnedItem } from "../../types/portal";
 import CwBottomNav from "../../components/portal/CwBottomNav.vue";
 import CwIcon from "../../components/portal/CwIcon.vue";
 import CwPageState from "../../components/portal/CwPageState.vue";
 import { accessLabel, formatCount, relativeTime } from "../../utils/portal-format";
+import { loginUrl } from "../../utils/auth";
 
 const data = ref<HomeResponse>();
 const loading = ref(true);
 const error = ref("");
 const activeCategory = ref("全部");
+
+const categories = computed(() => [
+  "全部",
+  ...new Set((data.value?.categories || []).filter((item) => item && item !== "全部")),
+]);
 
 const visibleFeed = computed(() => {
   if (!data.value || activeCategory.value === "全部") return data.value?.feed || [];
@@ -23,6 +29,7 @@ async function load() {
   error.value = "";
   try {
     data.value = await portalApi.home();
+    if (!categories.value.includes(activeCategory.value)) activeCategory.value = "全部";
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "网络连接失败";
   } finally {
@@ -34,17 +41,38 @@ function joinMember() {
   uni.navigateTo({ url: "/pages/member/index" });
 }
 
-function openContent(id: number) {
-  uni.navigateTo({ url: `/pages/content/detail?id=${id}` });
+function openPinned(item: PinnedItem) {
+  if (item.target_type === "academy") {
+    uni.switchTab({ url: "/pages/academy/index", fail: () => uni.reLaunch({ url: "/pages/academy/index" }) });
+    return;
+  }
+  if (item.target_type === "member") {
+    joinMember();
+    return;
+  }
+  if (item.target_id) uni.navigateTo({ url: `/pages/content/detail?id=${item.target_id}` });
+}
+
+function openContent(item: FeedItem) {
+  const target = `/pages/content/detail?id=${item.id}`;
+  if (item.can_access) {
+    uni.navigateTo({ url: target });
+    return;
+  }
+  if (item.lock_reason === "login_required") {
+    uni.navigateTo({ url: loginUrl(target) });
+    return;
+  }
+  uni.navigateTo({ url: "/pages/member/index" });
 }
 
 function openSearch() {
   uni.showToast({ title: "搜索功能将在内容检索模块开放", icon: "none" });
 }
 
-onMounted(load);
 onShow(() => {
   uni.hideTabBar({ animation: false, fail: () => undefined });
+  void load();
 });
 </script>
 
@@ -76,10 +104,10 @@ onShow(() => {
         <view class="avatar-stack">
           <view v-for="(label, index) in ['若', '志', '马', '+']" :key="label" class="mini-avatar" :class="`mini-avatar--${index}`">{{ label }}</view>
         </view>
-        <text class="community-count">{{ formatCount(data?.joined_count || 12840) }} 位专业投资人已加入</text>
+        <text class="community-count">{{ formatCount(data?.joined_count || 0) }} 位专业投资人已加入</text>
         <button class="join-button" @tap="joinMember">
           <CwIcon name="crown" :size="30" tone="navy" />
-          <text>立即加入</text>
+          <text>{{ data?.member?.is_member ? "会员中心" : "立即加入" }}</text>
         </button>
       </view>
     </view>
@@ -89,7 +117,7 @@ onShow(() => {
 
       <template v-else-if="data">
         <view class="pinned-panel">
-          <button v-for="item in data.pinned" :key="item.id" class="pinned-item" hover-class="pinned-item--hover" @tap="openContent(item.id)">
+          <button v-for="item in data.pinned" :key="item.id" class="pinned-item" hover-class="pinned-item--hover" @tap="openPinned(item)">
             <view class="pinned-icon" :class="`pinned-icon--${item.accent}`">
               <CwIcon :name="item.icon" :size="34" :tone="item.accent === 'orange' ? 'orange' : item.accent === 'cyan' ? 'cyan' : 'navy'" />
             </view>
@@ -107,7 +135,7 @@ onShow(() => {
         <scroll-view class="category-scroll" scroll-x :show-scrollbar="false">
           <view class="category-list">
             <button
-              v-for="category in data.categories"
+              v-for="category in categories"
               :key="category"
               class="category-chip"
               :class="{ 'category-chip--active': activeCategory === category }"
@@ -118,7 +146,7 @@ onShow(() => {
         </scroll-view>
 
         <view class="feed-list">
-          <article v-for="item in visibleFeed" :key="item.id" class="feed-card" @tap="openContent(item.id)">
+          <article v-for="item in visibleFeed" :key="item.id" class="feed-card" @tap="openContent(item)">
             <view class="feed-accent" />
             <view class="feed-head">
               <view class="feed-meta">
@@ -140,7 +168,7 @@ onShow(() => {
               <view class="author-badge"><text>{{ item.author.title }} · {{ item.author.name }}</text></view>
             </view>
 
-            <view v-if="item.liked_by_names.length || item.comments.length" class="discussion-box" @tap.stop="openContent(item.id)">
+            <view v-if="item.liked_by_names.length || item.comments.length" class="discussion-box" @tap.stop="openContent(item)">
               <view v-if="item.liked_by_names.length" class="liked-line">
                 <CwIcon name="like" :size="26" tone="orange" />
                 <text>{{ item.liked_by_names.join('、') }} 等 {{ item.like_count }} 人赞过</text>

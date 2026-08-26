@@ -5,6 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 AccessLevel = Literal["public", "login", "member", "premium"]
+LockReason = Literal["login_required", "membership_required", "plan_required"]
 PinnedTargetType = Literal["content", "academy", "member"]
 
 
@@ -44,9 +45,12 @@ class FeedItem(PortalModel):
     category: str = Field(min_length=1, max_length=128)
     content_type: str = Field(min_length=1, max_length=32)
     title: str = Field(min_length=1, max_length=255)
-    summary: str = Field(min_length=1, max_length=1000)
+    summary: str = Field(default="", max_length=1000)
+    cover_url: str | None = Field(default=None, max_length=1000)
     published_at: datetime
     access_level: AccessLevel = "public"
+    can_access: bool = True
+    lock_reason: LockReason | None = None
     like_count: int = Field(default=0, ge=0)
     comment_count: int = Field(default=0, ge=0)
     author: Author
@@ -58,20 +62,22 @@ class MemberSummary(PortalModel):
     id: int = Field(gt=0)
     nickname: str = Field(min_length=1, max_length=128)
     level_name: str = Field(min_length=1, max_length=128)
-    expire_date: date
+    expire_date: date | None = None
     member_no: str = Field(min_length=1, max_length=64)
     joined_days: int = Field(ge=0)
     slogan: str = Field(min_length=1, max_length=500)
+    is_member: bool = False
+    active_plan_codes: list[str] = Field(default_factory=list, max_length=50)
 
 
 class HomeResponse(PortalModel):
     brand_name: str = Field(min_length=1, max_length=64)
     brand_slogan: str = Field(min_length=1, max_length=255)
     joined_count: int = Field(ge=0)
-    member: MemberSummary
-    pinned: list[PinnedItem] = Field(max_length=20)
-    categories: list[str] = Field(min_length=1, max_length=30)
-    feed: list[FeedItem] = Field(max_length=100)
+    member: MemberSummary | None = None
+    pinned: list[PinnedItem] = Field(default_factory=list, max_length=20)
+    categories: list[str] = Field(default_factory=list, max_length=30)
+    feed: list[FeedItem] = Field(default_factory=list, max_length=100)
 
 
 class LiveSession(PortalModel):
@@ -111,7 +117,7 @@ class CourseCard(PortalModel):
 class AcademyResponse(PortalModel):
     live_sessions: list[LiveSession] = Field(max_length=50)
     columns: list[ColumnCard] = Field(max_length=100)
-    course_categories: list[str] = Field(min_length=1, max_length=50)
+    course_categories: list[str] = Field(default_factory=list, max_length=50)
     courses: list[CourseCard] = Field(max_length=200)
 
 
@@ -151,7 +157,7 @@ class ProfileResponse(PortalModel):
     member: MemberSummary
     benefits: list[str] = Field(max_length=50)
     stats: LearningStats
-    recent_learning: RecentLearning
+    recent_learning: RecentLearning | None = None
     achievements: list[Achievement] = Field(max_length=100)
     assets: list[AssetEntry] = Field(max_length=100)
 
@@ -165,14 +171,17 @@ class ContentDetailResponse(PortalModel):
     id: int = Field(gt=0)
     category: str = Field(min_length=1, max_length=128)
     title: str = Field(min_length=1, max_length=255)
-    summary: str = Field(min_length=1, max_length=1000)
+    summary: str = Field(default="", max_length=1000)
+    cover_url: str | None = Field(default=None, max_length=1000)
     published_at: datetime
     access_level: AccessLevel
+    can_access: bool = True
     like_count: int = Field(ge=0)
     comment_count: int = Field(ge=0)
     reading_minutes: int = Field(gt=0, le=1440)
     author: Author
-    sections: list[ContentSection] = Field(min_length=1, max_length=100)
+    body_html: str | None = None
+    sections: list[ContentSection] = Field(default_factory=list, max_length=100)
 
 
 class LessonSummary(PortalModel):
@@ -205,25 +214,28 @@ class CourseDetailResponse(PortalModel):
 
 
 class MemberPlan(PortalModel):
+    id: int = Field(gt=0)
     code: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9-]+$")
     name: str = Field(min_length=1, max_length=128)
+    rank: int = Field(ge=1, le=100)
+    duration_days: int = Field(ge=1, le=3650)
     period_label: str = Field(min_length=1, max_length=128)
-    price: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
+    price: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     original_price: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
-    benefits: list[str] = Field(min_length=1, max_length=50)
+    benefits: list[str] = Field(default_factory=list, max_length=50)
     recommended: bool = False
 
 
 class MemberCenterResponse(PortalModel):
-    member: MemberSummary
+    member: MemberSummary | None = None
     current_benefits: list[str] = Field(max_length=50)
-    plans: list[MemberPlan] = Field(min_length=1, max_length=50)
+    plans: list[MemberPlan] = Field(default_factory=list, max_length=50)
 
 
 class PortalHealth(PortalModel):
     status: Literal["ok", "degraded"]
     service: str = "caibuwailu-portal"
-    version: str = "0.2.1"
+    version: str = "0.3.0"
     environment: str
     data_source: Literal["demo", "database"]
     production_ready: bool

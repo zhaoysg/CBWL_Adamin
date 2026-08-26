@@ -95,13 +95,15 @@ class MemberPlanService:
         if len(objs) != len(unique_ids):
             raise CustomException(msg="部分会员套餐不存在", status_code=RET.NOT_FOUND.code)
 
-        # 延迟导入，避免会员与内容模型在模块初始化阶段形成循环依赖。
+        # 延迟导入，避免会员、内容和订阅模型在模块初始化阶段形成循环依赖。
         from app.api.v1.module_content.article.model import ContentPlanModel
+        from app.api.v1.module_membership.subscription.model import MemberSubscriptionModel
 
-        association_count = await self.db.scalar(select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids)))
-        if association_count:
+        content_reference_count = await self.db.scalar(select(func.count()).select_from(ContentPlanModel).where(ContentPlanModel.plan_id.in_(unique_ids)))
+        subscription_reference_count = await self.db.scalar(select(func.count()).select_from(MemberSubscriptionModel).where(MemberSubscriptionModel.plan_id.in_(unique_ids)))
+        if content_reference_count or subscription_reference_count:
             raise CustomException(
-                msg="套餐仍被内容权限或历史内容引用，请停用而不是删除",
+                msg="套餐仍被内容权限或会员订阅引用，请停用而不是删除",
                 code=RET.CONFLICT.code,
                 status_code=RET.CONFLICT.code,
             )

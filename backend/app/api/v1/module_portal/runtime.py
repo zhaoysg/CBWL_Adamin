@@ -63,9 +63,9 @@ def get_portal_runtime_state() -> PortalRuntimeState:
             environment=environment,
             data_source=data_source,
             allow_demo_in_prod=allow_demo_in_prod,
-            allowed=False,
-            production_ready=False,
-            reason="M1 尚未提供数据库 Portal Provider",
+            allowed=True,
+            production_ready=True,
+            reason=None,
         )
 
     if is_prod and not allow_demo_in_prod:
