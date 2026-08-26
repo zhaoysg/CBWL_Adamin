@@ -242,6 +242,8 @@ import MemberSubscriptionAPI, {
   type SubscriptionSource,
 } from "@/api/module_membership/subscription";
 
+type SubscriptionActionRow = Partial<Pick<MemberSubscriptionTable, "id" | "version_no">>;
+
 const loading = ref(false);
 const submitting = ref(false);
 const userLoading = ref(false);
@@ -382,15 +384,15 @@ async function submitGrant() {
   }
 }
 
-async function openDetail(row: MemberSubscriptionTable) {
-  if (!row.id) return;
+async function openDetail(row: SubscriptionActionRow) {
+  if (typeof row.id !== "number") return;
   const response = await MemberSubscriptionAPI.detail(row.id);
   detail.value = response.data.data;
   detailVisible.value = true;
 }
 
-async function revokeSubscription(row: MemberSubscriptionTable) {
-  if (!row.id) return;
+async function revokeSubscription(row: SubscriptionActionRow) {
+  if (typeof row.id !== "number" || typeof row.version_no !== "number") return;
   const prompt = await ElMessageBox.prompt(
     "撤销后权益立即失效且保留审计记录，请填写撤销原因。",
     "撤销会员订阅",
