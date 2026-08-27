@@ -23,8 +23,7 @@ class CommerceOrderModel(ModelMixin, UserMixin):
         UniqueConstraint("user_id", "idempotency_key", name="uq_cw_order_user_idempotency"),
         CheckConstraint(f"status IN ({sql_enum_values(OrderStatus)})", name="ck_cw_order_status"),
         CheckConstraint(
-            "amount_minor >= 0 AND paid_amount_minor >= 0 AND paid_amount_minor <= amount_minor "
-            "AND refunded_amount_minor >= 0 AND refunded_amount_minor <= paid_amount_minor",
+            "amount_minor >= 0 AND paid_amount_minor >= 0 AND paid_amount_minor <= amount_minor AND refunded_amount_minor >= 0 AND refunded_amount_minor <= paid_amount_minor",
             name="ck_cw_order_amounts",
         ),
         CheckConstraint("version_no >= 1", name="ck_cw_order_version"),

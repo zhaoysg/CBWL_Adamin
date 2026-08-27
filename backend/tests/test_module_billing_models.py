@@ -27,11 +27,7 @@ _REQUIRED_TABLES = {
 
 
 def _constraint_names(model: type[MappedBase], constraint_type: type) -> set[str]:
-    return {
-        constraint.name
-        for constraint in model.__table__.constraints
-        if isinstance(constraint, constraint_type) and constraint.name is not None
-    }
+    return {constraint.name for constraint in model.__table__.constraints if isinstance(constraint, constraint_type) and constraint.name is not None}
 
 
 def _index_names(model: type[MappedBase]) -> set[str]:

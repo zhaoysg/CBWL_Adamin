@@ -74,8 +74,7 @@ def upgrade() -> None:
             name="ck_cw_order_status",
         ),
         sa.CheckConstraint(
-            "amount_minor >= 0 AND paid_amount_minor >= 0 AND paid_amount_minor <= amount_minor "
-            "AND refunded_amount_minor >= 0 AND refunded_amount_minor <= paid_amount_minor",
+            "amount_minor >= 0 AND paid_amount_minor >= 0 AND paid_amount_minor <= amount_minor AND refunded_amount_minor >= 0 AND refunded_amount_minor <= paid_amount_minor",
             name="ck_cw_order_amounts",
         ),
         sa.CheckConstraint("version_no >= 1", name="ck_cw_order_version"),
