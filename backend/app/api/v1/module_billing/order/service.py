@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.module_billing.enums import OrderStatus
 from app.api.v1.module_billing.money import decimal_to_minor
-from app.api.v1.module_membership.entitlement import as_utc, utc_now
+from app.api.v1.module_membership.entitlement import utc_now
 from app.api.v1.module_membership.plan.model import MemberPlanModel
 from app.api.v1.module_system.user.model import UserModel
 from app.common.enums import RET

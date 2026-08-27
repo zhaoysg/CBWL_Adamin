@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.api.v1.module_billing.enums import OrderStatus
 
-
 _REFERENCE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
 
 

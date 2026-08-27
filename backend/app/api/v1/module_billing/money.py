@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-
 _CURRENCY_EXPONENT = {"CNY": 2}
 
 

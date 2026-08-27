@@ -12,7 +12,6 @@ from app.api.v1.module_billing.enums import (
     PaymentEventProcessingStatus,
 )
 
-
 _REFERENCE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
 PaymentMetadataValue = str | int | bool | None
 
