@@ -1,5 +1,7 @@
+from decimal import Decimal
 from pathlib import Path
 
+import pytest
 from sqlalchemy import JSON, BigInteger, CheckConstraint, UniqueConstraint
 
 from app.api.v1.module_billing.enums import (
@@ -10,6 +12,7 @@ from app.api.v1.module_billing.enums import (
     PaymentEventProcessingStatus,
     RefundStatus,
 )
+from app.api.v1.module_billing.money import decimal_to_minor
 from app.api.v1.module_billing.order.model import CommerceOrderModel
 from app.api.v1.module_billing.outbox.model import OutboxEventModel
 from app.api.v1.module_billing.payment.model import PaymentAttemptModel, PaymentEventModel
@@ -73,6 +76,19 @@ def test_billing_enum_contract_is_explicit_and_stable() -> None:
         "published",
         "failed",
     }
+
+
+def test_decimal_to_minor_is_exact_and_fail_closed() -> None:
+    assert decimal_to_minor(Decimal("199.00"), "CNY") == 19900
+    assert decimal_to_minor(Decimal("0.01"), "cny") == 1
+    assert decimal_to_minor(Decimal("0"), "CNY") == 0
+
+    with pytest.raises(ValueError, match="最多支持"):
+        decimal_to_minor(Decimal("1.001"), "CNY")
+    with pytest.raises(ValueError, match="不支持的币种"):
+        decimal_to_minor(Decimal("1.00"), "USD")
+    with pytest.raises(ValueError, match="不能为负数"):
+        decimal_to_minor(Decimal("-0.01"), "CNY")
 
 
 def test_billing_models_are_discoverable_by_alembic() -> None:
