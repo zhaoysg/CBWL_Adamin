@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import BigInteger, CheckConstraint, JSON, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, CheckConstraint, UniqueConstraint
 
 from app.api.v1.module_billing.enums import (
     BillingProvider,

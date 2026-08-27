@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, Index, Integer, JSON, String, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.api.v1.module_billing.enums import OutboxEventStatus, sql_enum_values
