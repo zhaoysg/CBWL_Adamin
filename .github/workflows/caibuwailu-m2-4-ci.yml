@@ -1,0 +1,264 @@
+name: 财不外露 M2.4 订单支付 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/caibuwailu-m2-4-order-payment
+    paths:
+      - "backend/app/api/v1/module_billing/**"
+      - "backend/app/alembic/versions/20260827_01_caibuwailu_order_payment.py"
+      - "backend/tests/test_module_billing_models.py"
+      - ".github/workflows/caibuwailu-m2-4-ci.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "backend/app/api/v1/module_billing/**"
+      - "backend/app/alembic/versions/20260827_01_caibuwailu_order_payment.py"
+      - "backend/tests/test_module_billing_models.py"
+      - ".github/workflows/caibuwailu-m2-4-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m2-4-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: Billing model, migration and SQLite gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile M2.4 models, migration and tests
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_billing
+          app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          tests/test_module_billing_models.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_billing
+          app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          tests/test_module_billing_models.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_billing
+          app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          tests/test_module_billing_models.py
+
+      - name: Security scan billing models
+        run: uvx bandit -q -r app/api/v1/module_billing
+
+      - name: Run billing model contract tests
+        run: uv run pytest -q tests/test_module_billing_models.py
+
+      - name: Run application smoke tests
+        run: uv run pytest -q tests/test_main.py
+
+      - name: SQLite migration round trip
+        env:
+          ENVIRONMENT: dev
+          DATABASE_TYPE: sqlite
+          DATABASE_NAME: /tmp/caibuwailu_m2_4_migration
+          SECRET_KEY: ci-only-secret-key-not-for-production
+        run: |
+          rm -f /tmp/caibuwailu_m2_4_migration.db
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260823_01
+          uv run alembic -c alembic.ini upgrade head
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine("sqlite:////tmp/caibuwailu_m2_4_migration.db")
+          actual = set(inspect(engine).get_table_names())
+          expected = {
+              "cw_order",
+              "cw_payment_attempt",
+              "cw_payment_event",
+              "cw_refund",
+              "cw_outbox_event",
+          }
+          assert expected <= actual
+          PY
+
+  mysql-migration:
+    name: MySQL 8.4 billing migration round trip
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: root
+      DATABASE_PASSWORD: root
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INT PRIMARY KEY) ENGINE=InnoDB"))
+          PY
+
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260823_01
+          uv run alembic -c alembic.ini upgrade head
+
+      - name: Assert billing tables
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine("mysql+pymysql://root:root@127.0.0.1:3306/caibuwailu")
+          actual = set(inspect(engine).get_table_names())
+          expected = {
+              "cw_order",
+              "cw_payment_attempt",
+              "cw_payment_event",
+              "cw_refund",
+              "cw_outbox_event",
+          }
+          assert expected <= actual
+          PY
+
+  postgres-migration:
+    name: PostgreSQL 16 billing migration round trip
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: caibuwailu
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres -d caibuwailu"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: postgres
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 5432
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          with engine.begin() as connection:
+              connection.execute(text("CREATE TABLE IF NOT EXISTS sys_user (id INTEGER PRIMARY KEY)"))
+          PY
+
+      - name: Upgrade, downgrade and re-upgrade
+        run: |
+          uv run alembic -c alembic.ini upgrade head
+          uv run alembic -c alembic.ini downgrade 20260823_01
+          uv run alembic -c alembic.ini upgrade head
+
+      - name: Assert billing tables
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+
+          engine = create_engine("postgresql+psycopg://postgres:postgres@127.0.0.1:5432/caibuwailu")
+          actual = set(inspect(engine).get_table_names())
+          expected = {
+              "cw_order",
+              "cw_payment_attempt",
+              "cw_payment_event",
+              "cw_refund",
+              "cw_outbox_event",
+          }
+          assert expected <= actual
+          PY
