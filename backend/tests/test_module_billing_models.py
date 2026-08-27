@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import JSON, BigInteger, CheckConstraint, UniqueConstraint
+from sqlalchemy.orm import configure_mappers
 
 from app.api.v1.module_billing.enums import (
     BillingProvider,
@@ -30,7 +31,11 @@ _REQUIRED_TABLES = {
 
 
 def _constraint_names(model: type[MappedBase], constraint_type: type) -> set[str]:
-    return {constraint.name for constraint in model.__table__.constraints if isinstance(constraint, constraint_type) and constraint.name is not None}
+    return {
+        constraint.name
+        for constraint in model.__table__.constraints
+        if isinstance(constraint, constraint_type) and constraint.name is not None
+    }
 
 
 def _index_names(model: type[MappedBase]) -> set[str]:
@@ -91,10 +96,17 @@ def test_decimal_to_minor_is_exact_and_fail_closed() -> None:
         decimal_to_minor(Decimal("-0.01"), "CNY")
 
 
-def test_billing_models_are_discoverable_by_alembic() -> None:
+def test_billing_models_are_discoverable_and_registry_is_configurable() -> None:
     ImportUtil.find_models.cache_clear()
     discovered = {model.__tablename__ for model in ImportUtil.find_models(MappedBase)}
     assert _REQUIRED_TABLES <= discovered
+
+    configure_mappers()
+    user_roles = MappedBase.metadata.tables["sys_user_roles"]
+    assert {foreign_key.target_fullname for foreign_key in user_roles.foreign_keys} == {
+        "sys_role.id",
+        "sys_user.id",
+    }
 
 
 def test_order_model_enforces_integer_money_and_idempotency() -> None:
@@ -137,7 +149,9 @@ def test_payment_models_keep_provider_evidence_without_raw_secrets() -> None:
     } <= _constraint_names(PaymentAttemptModel, UniqueConstraint)
 
     event_columns = set(event_table.c.keys())
-    assert {"raw_body", "raw_payload", "request_body", "request_headers"}.isdisjoint(event_columns)
+    assert {"raw_body", "raw_payload", "request_body", "request_headers"}.isdisjoint(
+        event_columns
+    )
     assert {
         "provider",
         "provider_event_id",
@@ -149,9 +163,18 @@ def test_payment_models_keep_provider_evidence_without_raw_secrets() -> None:
     } <= event_columns
     assert isinstance(event_table.c.amount_minor.type, BigInteger)
     assert event_table.c.currency.nullable is True
-    assert event_table.c.processing_status.default.arg == PaymentEventProcessingStatus.RECEIVED.value
-    assert "uq_cw_payment_event_provider_event" in _constraint_names(PaymentEventModel, UniqueConstraint)
-    assert "ck_cw_payment_event_amount" in _constraint_names(PaymentEventModel, CheckConstraint)
+    assert (
+        event_table.c.processing_status.default.arg
+        == PaymentEventProcessingStatus.RECEIVED.value
+    )
+    assert "uq_cw_payment_event_provider_event" in _constraint_names(
+        PaymentEventModel,
+        UniqueConstraint,
+    )
+    assert "ck_cw_payment_event_amount" in _constraint_names(
+        PaymentEventModel,
+        CheckConstraint,
+    )
 
 
 def test_refund_and_outbox_models_have_deduplication_guards() -> None:
@@ -164,7 +187,10 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
     } <= _constraint_names(RefundModel, UniqueConstraint)
 
     assert isinstance(OutboxEventModel.__table__.c.payload.type, JSON)
-    assert OutboxEventModel.__table__.c.status.default.arg == OutboxEventStatus.PENDING.value
+    assert (
+        OutboxEventModel.__table__.c.status.default.arg
+        == OutboxEventStatus.PENDING.value
+    )
     assert {
         "uq_cw_outbox_event_event_id",
         "uq_cw_outbox_event_deduplication",
@@ -174,8 +200,12 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
 
 def test_m2_4_migration_chain_is_explicit() -> None:
     versions = Path(__file__).parents[1] / "app/alembic/versions"
-    base_migration = (versions / "20260827_01_caibuwailu_order_payment.py").read_text(encoding="utf-8")
-    event_money_migration = (versions / "20260827_02_caibuwailu_payment_event_amount.py").read_text(encoding="utf-8")
+    base_migration = (
+        versions / "20260827_01_caibuwailu_order_payment.py"
+    ).read_text(encoding="utf-8")
+    event_money_migration = (
+        versions / "20260827_02_caibuwailu_payment_event_amount.py"
+    ).read_text(encoding="utf-8")
 
     assert 'revision: str = "20260827_01"' in base_migration
     assert 'down_revision: str | None = "20260823_01"' in base_migration
