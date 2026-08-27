@@ -27,7 +27,11 @@ _REQUIRED_TABLES = {
 
 
 def _constraint_names(model: type[MappedBase], constraint_type: type) -> set[str]:
-    return {constraint.name for constraint in model.__table__.constraints if isinstance(constraint, constraint_type) and constraint.name is not None}
+    return {
+        constraint.name
+        for constraint in model.__table__.constraints
+        if isinstance(constraint, constraint_type) and constraint.name is not None
+    }
 
 
 def _index_names(model: type[MappedBase]) -> set[str]:
@@ -125,12 +129,17 @@ def test_payment_models_keep_provider_evidence_without_raw_secrets() -> None:
     assert {
         "provider",
         "provider_event_id",
+        "amount_minor",
+        "currency",
         "payload_hash",
         "signature_verified",
         "processing_status",
     } <= event_columns
+    assert isinstance(event_table.c.amount_minor.type, BigInteger)
+    assert event_table.c.currency.nullable is True
     assert event_table.c.processing_status.default.arg == PaymentEventProcessingStatus.RECEIVED.value
     assert "uq_cw_payment_event_provider_event" in _constraint_names(PaymentEventModel, UniqueConstraint)
+    assert "ck_cw_payment_event_amount" in _constraint_names(PaymentEventModel, CheckConstraint)
 
 
 def test_refund_and_outbox_models_have_deduplication_guards() -> None:
@@ -151,11 +160,21 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
     assert "ix_cw_outbox_event_delivery" in _index_names(OutboxEventModel)
 
 
-def test_m2_4_migration_chains_after_member_subscription() -> None:
-    migration = Path(__file__).parents[1] / "app/alembic/versions/20260827_01_caibuwailu_order_payment.py"
-    source = migration.read_text(encoding="utf-8")
+def test_m2_4_migration_chain_is_explicit() -> None:
+    versions = Path(__file__).parents[1] / "app/alembic/versions"
+    base_migration = (versions / "20260827_01_caibuwailu_order_payment.py").read_text(
+        encoding="utf-8"
+    )
+    event_money_migration = (
+        versions / "20260827_02_caibuwailu_payment_event_amount.py"
+    ).read_text(encoding="utf-8")
 
-    assert 'revision: str = "20260827_01"' in source
-    assert 'down_revision: str | None = "20260823_01"' in source
+    assert 'revision: str = "20260827_01"' in base_migration
+    assert 'down_revision: str | None = "20260823_01"' in base_migration
     for table_name in _REQUIRED_TABLES:
-        assert f'"{table_name}"' in source
+        assert f'"{table_name}"' in base_migration
+
+    assert 'revision: str = "20260827_02"' in event_money_migration
+    assert 'down_revision: str | None = "20260827_01"' in event_money_migration
+    assert '"amount_minor"' in event_money_migration
+    assert '"currency"' in event_money_migration

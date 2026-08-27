@@ -8,7 +8,9 @@ on:
     paths:
       - "backend/app/api/v1/module_billing/**"
       - "backend/app/alembic/versions/20260827_01_caibuwailu_order_payment.py"
+      - "backend/app/alembic/versions/20260827_02_caibuwailu_payment_event_amount.py"
       - "backend/tests/test_module_billing_models.py"
+      - "backend/tests/test_module_billing_service.py"
       - ".github/workflows/caibuwailu-m2-4-ci.yml"
   pull_request:
     branches:
@@ -16,7 +18,9 @@ on:
     paths:
       - "backend/app/api/v1/module_billing/**"
       - "backend/app/alembic/versions/20260827_01_caibuwailu_order_payment.py"
+      - "backend/app/alembic/versions/20260827_02_caibuwailu_payment_event_amount.py"
       - "backend/tests/test_module_billing_models.py"
+      - "backend/tests/test_module_billing_service.py"
       - ".github/workflows/caibuwailu-m2-4-ci.yml"
 
 permissions:
@@ -55,27 +59,36 @@ jobs:
           uv run python -m compileall -q
           app/api/v1/module_billing
           app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          app/alembic/versions/20260827_02_caibuwailu_payment_event_amount.py
           tests/test_module_billing_models.py
+          tests/test_module_billing_service.py
 
       - name: Ruff lint
         run: >-
           uv run ruff check --no-fix
           app/api/v1/module_billing
           app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          app/alembic/versions/20260827_02_caibuwailu_payment_event_amount.py
           tests/test_module_billing_models.py
+          tests/test_module_billing_service.py
 
       - name: Ruff format check
         run: >-
           uv run ruff format --check
           app/api/v1/module_billing
           app/alembic/versions/20260827_01_caibuwailu_order_payment.py
+          app/alembic/versions/20260827_02_caibuwailu_payment_event_amount.py
           tests/test_module_billing_models.py
+          tests/test_module_billing_service.py
 
       - name: Security scan billing models
         run: uvx bandit -q -r app/api/v1/module_billing
 
-      - name: Run billing model contract tests
-        run: uv run pytest -q tests/test_module_billing_models.py
+      - name: Run billing contract and transaction tests
+        run: >-
+          uv run pytest -q
+          tests/test_module_billing_models.py
+          tests/test_module_billing_service.py
 
       - name: Run application smoke tests
         run: uv run pytest -q tests/test_main.py
@@ -104,6 +117,8 @@ jobs:
               "cw_outbox_event",
           }
           assert expected <= actual
+          event_columns = {column["name"] for column in inspect(engine).get_columns("cw_payment_event")}
+          assert {"amount_minor", "currency"} <= event_columns
           PY
 
   mysql-migration:
@@ -182,6 +197,8 @@ jobs:
               "cw_outbox_event",
           }
           assert expected <= actual
+          event_columns = {column["name"] for column in inspect(engine).get_columns("cw_payment_event")}
+          assert {"amount_minor", "currency"} <= event_columns
           PY
 
   postgres-migration:
@@ -261,4 +278,6 @@ jobs:
               "cw_outbox_event",
           }
           assert expected <= actual
+          event_columns = {column["name"] for column in inspect(engine).get_columns("cw_payment_event")}
+          assert {"amount_minor", "currency"} <= event_columns
           PY

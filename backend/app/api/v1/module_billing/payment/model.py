@@ -75,6 +75,7 @@ class PaymentEventModel(ModelMixin):
             f"processing_status IN ({sql_enum_values(PaymentEventProcessingStatus)})",
             name="ck_cw_payment_event_processing_status",
         ),
+        CheckConstraint("amount_minor IS NULL OR amount_minor >= 0", name="ck_cw_payment_event_amount"),
         Index("ix_cw_payment_event_order_received", "order_id", "received_at", "id"),
         Index("ix_cw_payment_event_order_no", "order_no", "received_at", "id"),
         Index("ix_cw_payment_event_provider_txn", "provider", "provider_transaction_id", "received_at", "id"),
@@ -93,6 +94,8 @@ class PaymentEventModel(ModelMixin):
         comment="已关联订单ID",
     )
     order_no: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="事件携带订单号")
+    amount_minor: Mapped[int | None] = mapped_column(BigInteger, nullable=True, comment="事件声明金额")
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True, comment="事件声明币种")
     payload_hash: Mapped[str] = mapped_column(String(64), nullable=False, comment="原始报文SHA-256")
     signature_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="签名是否验证通过")
     event_metadata: Mapped[dict[str, object] | None] = mapped_column(JSON, nullable=True, comment="经筛选的非敏感事件元数据")
