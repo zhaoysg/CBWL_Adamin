@@ -98,7 +98,9 @@ def test_decimal_to_minor_is_exact_and_fail_closed() -> None:
 
 def test_billing_models_are_discoverable_and_registry_is_configurable() -> None:
     ImportUtil.find_models.cache_clear()
-    discovered = {model.__tablename__ for model in ImportUtil.find_models(MappedBase)}
+    models = ImportUtil.find_models(MappedBase)
+    discovered = {model.__tablename__ for model in models}
+    assert len(models) == len(discovered)
     assert _REQUIRED_TABLES <= discovered
 
     configure_mappers()
