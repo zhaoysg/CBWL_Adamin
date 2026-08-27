@@ -31,11 +31,7 @@ _REQUIRED_TABLES = {
 
 
 def _constraint_names(model: type[MappedBase], constraint_type: type) -> set[str]:
-    return {
-        constraint.name
-        for constraint in model.__table__.constraints
-        if isinstance(constraint, constraint_type) and constraint.name is not None
-    }
+    return {constraint.name for constraint in model.__table__.constraints if isinstance(constraint, constraint_type) and constraint.name is not None}
 
 
 def _index_names(model: type[MappedBase]) -> set[str]:
@@ -151,9 +147,7 @@ def test_payment_models_keep_provider_evidence_without_raw_secrets() -> None:
     } <= _constraint_names(PaymentAttemptModel, UniqueConstraint)
 
     event_columns = set(event_table.c.keys())
-    assert {"raw_body", "raw_payload", "request_body", "request_headers"}.isdisjoint(
-        event_columns
-    )
+    assert {"raw_body", "raw_payload", "request_body", "request_headers"}.isdisjoint(event_columns)
     assert {
         "provider",
         "provider_event_id",
@@ -165,10 +159,7 @@ def test_payment_models_keep_provider_evidence_without_raw_secrets() -> None:
     } <= event_columns
     assert isinstance(event_table.c.amount_minor.type, BigInteger)
     assert event_table.c.currency.nullable is True
-    assert (
-        event_table.c.processing_status.default.arg
-        == PaymentEventProcessingStatus.RECEIVED.value
-    )
+    assert event_table.c.processing_status.default.arg == PaymentEventProcessingStatus.RECEIVED.value
     assert "uq_cw_payment_event_provider_event" in _constraint_names(
         PaymentEventModel,
         UniqueConstraint,
@@ -189,10 +180,7 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
     } <= _constraint_names(RefundModel, UniqueConstraint)
 
     assert isinstance(OutboxEventModel.__table__.c.payload.type, JSON)
-    assert (
-        OutboxEventModel.__table__.c.status.default.arg
-        == OutboxEventStatus.PENDING.value
-    )
+    assert OutboxEventModel.__table__.c.status.default.arg == OutboxEventStatus.PENDING.value
     assert {
         "uq_cw_outbox_event_event_id",
         "uq_cw_outbox_event_deduplication",
@@ -202,12 +190,8 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
 
 def test_m2_4_migration_chain_is_explicit() -> None:
     versions = Path(__file__).parents[1] / "app/alembic/versions"
-    base_migration = (
-        versions / "20260827_01_caibuwailu_order_payment.py"
-    ).read_text(encoding="utf-8")
-    event_money_migration = (
-        versions / "20260827_02_caibuwailu_payment_event_amount.py"
-    ).read_text(encoding="utf-8")
+    base_migration = (versions / "20260827_01_caibuwailu_order_payment.py").read_text(encoding="utf-8")
+    event_money_migration = (versions / "20260827_02_caibuwailu_payment_event_amount.py").read_text(encoding="utf-8")
 
     assert 'revision: str = "20260827_01"' in base_migration
     assert 'down_revision: str | None = "20260823_01"' in base_migration

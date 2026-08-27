@@ -162,19 +162,11 @@ class ImportUtil:
                 try:
                     module = importlib.import_module(module_name)
                     for _name, obj in inspect.getmembers(module, inspect.isclass):
-                        if (
-                            cls.is_valid_model(obj, base_class)
-                            and getattr(obj, "__tablename__", None) == "apscheduler_jobs"
-                            and obj not in seen_models
-                            and "apscheduler_jobs" not in seen_tables
-                        ):
+                        if cls.is_valid_model(obj, base_class) and getattr(obj, "__tablename__", None) == "apscheduler_jobs" and obj not in seen_models and "apscheduler_jobs" not in seen_tables:
                             seen_models.add(obj)
                             seen_tables.add("apscheduler_jobs")
                             models.append(obj)
-                            print(
-                                f"✅️ 找到有效模型: {obj.__module__}.{obj.__name__} "
-                                "(表: apscheduler_jobs)"
-                            )
+                            print(f"✅️ 找到有效模型: {obj.__module__}.{obj.__name__} (表: apscheduler_jobs)")
                 except ImportError:
                     pass
         except Exception as exc:
