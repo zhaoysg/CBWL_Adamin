@@ -58,12 +58,7 @@ class PaymentSettlementService:
         event.order_id = order.id
         if order.status == OrderStatus.PAID.value:
             owner = await self._transaction_owner(data)
-            if (
-                owner is not None
-                and owner.order_id == order.id
-                and order.amount_minor == data.amount_minor
-                and order.currency == data.currency
-            ):
+            if owner is not None and owner.order_id == order.id and order.amount_minor == data.amount_minor and order.currency == data.currency:
                 return await self._finish_event(
                     event,
                     status=PaymentEventProcessingStatus.IGNORED,
@@ -308,11 +303,7 @@ class PaymentSettlementService:
         subscription: MemberSubscriptionModel,
     ) -> OutboxEventModel:
         deduplication_key = f"billing.order.paid:{order.order_no}"
-        existing = await self.db.scalar(
-            select(OutboxEventModel)
-            .where(OutboxEventModel.deduplication_key == deduplication_key)
-            .with_for_update()
-        )
+        existing = await self.db.scalar(select(OutboxEventModel).where(OutboxEventModel.deduplication_key == deduplication_key).with_for_update())
         if existing is not None:
             return existing
 
@@ -343,11 +334,7 @@ class PaymentSettlementService:
                 self.db.add(outbox)
                 await self.db.flush()
         except IntegrityError:
-            existing = await self.db.scalar(
-                select(OutboxEventModel)
-                .where(OutboxEventModel.deduplication_key == deduplication_key)
-                .with_for_update()
-            )
+            existing = await self.db.scalar(select(OutboxEventModel).where(OutboxEventModel.deduplication_key == deduplication_key).with_for_update())
             if existing is None:
                 raise self._conflict("事务发件箱写入冲突，请稍后重试")
             return existing
@@ -393,12 +380,7 @@ class PaymentSettlementService:
                     MemberSubscriptionModel.is_deleted.is_(False),
                 )
             )
-            outbox = await self.db.scalar(
-                select(OutboxEventModel).where(
-                    OutboxEventModel.deduplication_key
-                    == f"billing.order.paid:{event.order_no}"
-                )
-            )
+            outbox = await self.db.scalar(select(OutboxEventModel).where(OutboxEventModel.deduplication_key == f"billing.order.paid:{event.order_no}"))
         return PaymentProcessingResultSchema(
             event_id=event.id,
             processing_status=PaymentEventProcessingStatus(event.processing_status),

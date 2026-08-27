@@ -274,30 +274,20 @@ async def test_payment_success_grants_one_subscription_and_one_outbox_event(
         assert persisted_attempt.provider_transaction_id == "transaction-0002"
 
         subscription_count = await db.scalar(
-            select(func.count()).select_from(MemberSubscriptionModel).where(
+            select(func.count())
+            .select_from(MemberSubscriptionModel)
+            .where(
                 MemberSubscriptionModel.source == "payment",
                 MemberSubscriptionModel.source_ref == order.order_no,
             )
         )
-        outbox_count = await db.scalar(
-            select(func.count()).select_from(OutboxEventModel).where(
-                OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"
-            )
-        )
-        event_count = await db.scalar(
-            select(func.count()).select_from(PaymentEventModel).where(
-                PaymentEventModel.order_no == order.order_no
-            )
-        )
+        outbox_count = await db.scalar(select(func.count()).select_from(OutboxEventModel).where(OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"))
+        event_count = await db.scalar(select(func.count()).select_from(PaymentEventModel).where(PaymentEventModel.order_no == order.order_no))
         assert subscription_count == 1
         assert outbox_count == 1
         assert event_count == 2
 
-        outbox = await db.scalar(
-            select(OutboxEventModel).where(
-                OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"
-            )
-        )
+        outbox = await db.scalar(select(OutboxEventModel).where(OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"))
         assert outbox is not None
         assert outbox.status == OutboxEventStatus.PENDING.value
         assert outbox.payload["subscription_id"] == result.subscription_id
@@ -360,16 +350,13 @@ async def test_rejected_payment_facts_are_audited_without_granting_entitlement(
         assert late.reason == "order_status_closed"
 
     async with billing_session_factory() as db:
-        subscription_count = await db.scalar(
-            select(func.count()).select_from(MemberSubscriptionModel).where(
-                MemberSubscriptionModel.source_ref == order.order_no
-            )
-        )
+        subscription_count = await db.scalar(select(func.count()).select_from(MemberSubscriptionModel).where(MemberSubscriptionModel.source_ref == order.order_no))
         rejected_count = await db.scalar(
-            select(func.count()).select_from(PaymentEventModel).where(
+            select(func.count())
+            .select_from(PaymentEventModel)
+            .where(
                 PaymentEventModel.order_no == order.order_no,
-                PaymentEventModel.processing_status
-                == PaymentEventProcessingStatus.REJECTED.value,
+                PaymentEventModel.processing_status == PaymentEventProcessingStatus.REJECTED.value,
             )
         )
         persisted_order = await db.get(CommerceOrderModel, order.id)
@@ -434,16 +421,8 @@ async def test_subscription_conflict_rolls_back_payment_order_and_event_changes(
     async with billing_session_factory() as db:
         persisted_order = await db.get(CommerceOrderModel, order.id)
         persisted_attempt = await db.get(PaymentAttemptModel, attempt.id)
-        event_count = await db.scalar(
-            select(func.count()).select_from(PaymentEventModel).where(
-                PaymentEventModel.provider_event_id == "event-rollback-0004"
-            )
-        )
-        outbox_count = await db.scalar(
-            select(func.count()).select_from(OutboxEventModel).where(
-                OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"
-            )
-        )
+        event_count = await db.scalar(select(func.count()).select_from(PaymentEventModel).where(PaymentEventModel.provider_event_id == "event-rollback-0004"))
+        outbox_count = await db.scalar(select(func.count()).select_from(OutboxEventModel).where(OutboxEventModel.deduplication_key == f"billing.order.paid:{order.order_no}"))
         assert persisted_order is not None
         assert persisted_attempt is not None
         assert persisted_order.status == OrderStatus.PENDING.value

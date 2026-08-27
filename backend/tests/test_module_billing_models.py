@@ -27,11 +27,7 @@ _REQUIRED_TABLES = {
 
 
 def _constraint_names(model: type[MappedBase], constraint_type: type) -> set[str]:
-    return {
-        constraint.name
-        for constraint in model.__table__.constraints
-        if isinstance(constraint, constraint_type) and constraint.name is not None
-    }
+    return {constraint.name for constraint in model.__table__.constraints if isinstance(constraint, constraint_type) and constraint.name is not None}
 
 
 def _index_names(model: type[MappedBase]) -> set[str]:
@@ -162,12 +158,8 @@ def test_refund_and_outbox_models_have_deduplication_guards() -> None:
 
 def test_m2_4_migration_chain_is_explicit() -> None:
     versions = Path(__file__).parents[1] / "app/alembic/versions"
-    base_migration = (versions / "20260827_01_caibuwailu_order_payment.py").read_text(
-        encoding="utf-8"
-    )
-    event_money_migration = (
-        versions / "20260827_02_caibuwailu_payment_event_amount.py"
-    ).read_text(encoding="utf-8")
+    base_migration = (versions / "20260827_01_caibuwailu_order_payment.py").read_text(encoding="utf-8")
+    event_money_migration = (versions / "20260827_02_caibuwailu_payment_event_amount.py").read_text(encoding="utf-8")
 
     assert 'revision: str = "20260827_01"' in base_migration
     assert 'down_revision: str | None = "20260823_01"' in base_migration
