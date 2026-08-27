@@ -87,6 +87,8 @@ def test_order_model_enforces_integer_money_and_idempotency() -> None:
     assert isinstance(table.c.paid_amount_minor.type, BigInteger)
     assert isinstance(table.c.refunded_amount_minor.type, BigInteger)
     assert isinstance(table.c.plan_snapshot.type, JSON)
+    assert table.c.amount_minor.nullable is False
+    assert table.c.currency.nullable is False
     assert table.c.idempotency_key.nullable is False
     assert table.c.status.default.arg == OrderStatus.PENDING.value
 
