@@ -64,7 +64,7 @@ PORTAL_ALLOWED_ORIGINS=https://m.example.com
 PORTAL_ALLOWED_LOGIN_TYPES=H5,移动端
 PORTAL_ALLOW_SUPERUSER_LOGIN=False
 PORTAL_REFRESH_COOKIE_NAME=cbwl_portal_refresh
-PORTAL_REFRESH_COOKIE_PATH=/
+PORTAL_REFRESH_COOKIE_PATH=/api/v1/portal/auth
 PORTAL_REFRESH_COOKIE_SECURE=True
 PORTAL_REFRESH_COOKIE_SAMESITE=lax
 PORTAL_RATE_LIMIT_ENABLE=True
@@ -105,7 +105,7 @@ POST /api/v1/portal/auth/refresh
 POST /api/v1/portal/auth/logout
 ```
 
-H5 的 Access Token 只驻留内存；Refresh Token 只由后端写入 `HttpOnly + Secure + SameSite` Cookie。响应体不返回 Refresh Token。Portal 接口还会验证：
+H5 的 Access Token 只驻留内存；Refresh Token 只由后端写入 `HttpOnly + Secure + SameSite` Cookie，并且只发送到 `/api/v1/portal/auth`。响应体不返回 Refresh Token。Portal 接口还会验证：
 
 - JWT 类型与有效期；
 - Redis 中当前 Access/Refresh Token 的精确值；
