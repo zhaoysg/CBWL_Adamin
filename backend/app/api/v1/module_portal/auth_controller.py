@@ -7,6 +7,7 @@ from redis.asyncio.client import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config.portal_auth import portal_auth_settings
+from app.config.setting import settings
 from app.core.dependencies import db_getter, redis_getter
 from app.core.exceptions import CustomException
 
@@ -27,7 +28,7 @@ def _write_refresh_cookie(response: Response, refresh_token: str) -> None:
     response.set_cookie(
         key=portal_auth_settings.REFRESH_COOKIE_NAME,
         value=refresh_token,
-        max_age=None,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_SECONDS,
         httponly=True,
         secure=portal_auth_settings.REFRESH_COOKIE_SECURE,
         samesite=portal_auth_settings.REFRESH_COOKIE_SAMESITE,
