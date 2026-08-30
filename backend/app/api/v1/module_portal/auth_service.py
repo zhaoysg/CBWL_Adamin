@@ -207,8 +207,8 @@ class PortalAuthService:
     @staticmethod
     def _captcha_digest(key: str, answer: str) -> str:
         return hmac.new(
-            settings.SECRET_KEY.encode("utf-8"),
-            f"{key}:{answer}".encode("utf-8"),
+            settings.SECRET_KEY.encode(),
+            f"{key}:{answer}".encode(),
             hashlib.sha256,
         ).hexdigest()
 
@@ -278,7 +278,7 @@ class PortalAuthService:
     ) -> None:
         if not portal_auth_settings.RATE_LIMIT_ENABLE:
             return
-        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+        digest = hashlib.sha256(identity.encode()).hexdigest()
         key = f"{_RATE_LIMIT_PREFIX}:{bucket}:{digest}"
         try:
             current = int(await redis.eval(_RATE_LIMIT_SCRIPT, 1, key, window_seconds))
