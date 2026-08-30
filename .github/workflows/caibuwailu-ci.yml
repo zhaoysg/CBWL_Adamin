@@ -48,8 +48,6 @@ jobs:
         run: uv run --directory backend python -m compileall -q app/api/v1/module_portal
 
       - name: Run Portal contract tests
-        env:
-          PYTHONPATH: backend
         run: uv run --directory backend pytest -q contract_tests/test_portal_service.py
 
   h5-build:
