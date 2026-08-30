@@ -31,7 +31,7 @@ async def redis_getter(request: Request) -> Redis:
     """获取Redis连接
 
     参数:
-    - request (Request): 请求对象
+    - request (Request): FastAPI请求对象。
 
     返回:
     - Redis: Redis连接
@@ -44,7 +44,7 @@ async def get_current_user(
     redis: Redis = Depends(redis_getter),
     token: str = Depends(OAuth2Schema),
 ) -> AuthSchema:
-    """获取当前用户"""
+    """获取管理平台当前用户。"""
     return await _authenticate(token, db, redis)
 
 
@@ -53,10 +53,11 @@ async def get_optional_current_user(
     redis: Redis = Depends(redis_getter),
     token: str | None = Depends(OptionalOAuth2Schema),
 ) -> AuthSchema | None:
-    """可选认证。
+    """管理平台可选认证。
 
     未提供 Authorization 时返回 ``None``；一旦提供凭证，则必须完整通过
     JWT、Redis 会话、用户状态和数据库用户校验，避免无效凭证被静默降级为匿名。
+    H5 新会话不允许通过此依赖访问管理平台接口。
     """
 
     if not token:
@@ -68,8 +69,14 @@ async def _authenticate(
     token: str,
     db: AsyncSession,
     redis: Redis,
+    *,
+    allow_portal_session: bool = False,
 ) -> AuthSchema:
-    """核心认证逻辑（HTTP 与 WebSocket 共享）"""
+    """核心认证逻辑（HTTP 与 WebSocket 共享）。
+
+    默认只接受管理平台或历史客户端会话。Portal API 在完成自身 Access Token
+    精确值与 ``login_type`` 校验后，显式传入 ``allow_portal_session=True``。
+    """
     if not token:
         raise CustomException(msg="认证已失效", code=RET.UNAUTHORIZED.code, status_code=401)
 
@@ -97,6 +104,14 @@ async def _authenticate(
     # 校验 session 数据完整性
     if not user_info.get("session_id"):
         raise CustomException(msg="认证已失效", code=RET.UNAUTHORIZED.code, status_code=401)
+
+    login_type = str(user_info.get("login_type") or "")
+    if login_type == "H5" and not allow_portal_session:
+        raise CustomException(
+            msg="客户端会话类型不匹配",
+            code=RET.UNAUTHORIZED.code,
+            status_code=401,
+        )
 
     # 滑动过期续期
     if settings.TOKEN_SLIDING_EXPIRE:
@@ -148,7 +163,7 @@ class AuthPermission:
         self,
         permissions: list[str] | None = None,
     ) -> None:
-        """初始化权限验证
+        """初始化
 
         参数:
         - permissions (list[str] | None): 权限标识列表。
@@ -156,13 +171,13 @@ class AuthPermission:
         self.permissions = permissions or []
 
     async def __call__(self, auth: AuthSchema = Depends(get_current_user), db: AsyncSession = Depends(db_getter)) -> AuthSchema:
-        """调用权限验证
+        """调用
 
         参数:
         - auth (AuthSchema): 认证信息对象。
 
         返回:
-        - AuthSchema: 已认证的权限信息对象。
+        - AuthSchema: 认证信息对象。
         """
         user = auth.user
         if user.id is None or user.is_superuser:
