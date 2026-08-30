@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 AccessLevel = Literal["public", "login", "member", "premium"]
 LockReason = Literal["login_required", "membership_required", "plan_required"]
+UnlockAction = Literal["login", "member", "upgrade"]
 PinnedTargetType = Literal["content", "academy", "member"]
 
 
@@ -176,6 +177,9 @@ class ContentDetailResponse(PortalModel):
     published_at: datetime
     access_level: AccessLevel
     can_access: bool = True
+    lock_reason: LockReason | None = None
+    unlock_action: UnlockAction | None = None
+    unlock_message: str | None = Field(default=None, max_length=255)
     like_count: int = Field(ge=0)
     comment_count: int = Field(ge=0)
     reading_minutes: int = Field(gt=0, le=1440)
@@ -235,7 +239,7 @@ class MemberCenterResponse(PortalModel):
 class PortalHealth(PortalModel):
     status: Literal["ok", "degraded"]
     service: str = "caibuwailu-portal"
-    version: str = "0.3.0"
+    version: str = "0.4.0"
     environment: str
     data_source: Literal["demo", "database"]
     production_ready: bool
