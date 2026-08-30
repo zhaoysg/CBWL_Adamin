@@ -27,7 +27,7 @@ class PortalAuthSettings(BaseSettings):
     ALLOW_SUPERUSER_LOGIN: bool = False
 
     REFRESH_COOKIE_NAME: str = "cbwl_portal_refresh"
-    REFRESH_COOKIE_PATH: str = "/"
+    REFRESH_COOKIE_PATH: str = "/api/v1/portal/auth"
     REFRESH_COOKIE_SECURE: bool = False
     REFRESH_COOKIE_SAMESITE: Literal["lax", "strict", "none"] = "lax"
 
