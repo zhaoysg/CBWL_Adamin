@@ -35,23 +35,22 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install contract test dependencies
-        run: |
-          python -m pip install --upgrade \
-            "fastapi==0.138.2" \
-            "httpx==0.28.1" \
-            "pydantic[email]>=2.12.5,<3" \
-            "pydantic-settings>=2.6.1,<3" \
-            "pytest==9.0.2" \
-            "pytest-asyncio>=0.24.0,<2"
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
 
       - name: Compile Portal module
-        run: python -m compileall -q backend/app/api/v1/module_portal
+        run: uv run --directory backend python -m compileall -q app/api/v1/module_portal
 
       - name: Run Portal contract tests
         env:
           PYTHONPATH: backend
-        run: pytest -q backend/contract_tests/test_portal_service.py
+        run: uv run --directory backend pytest -q contract_tests/test_portal_service.py
 
   h5-build:
     name: H5 typecheck and build
