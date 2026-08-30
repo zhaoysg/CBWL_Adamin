@@ -49,10 +49,13 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
     assert "httponly" in login.headers["set-cookie"].lower()
 
     first_access = login_data["access_token"]
-    assert test_client.get(
-        "/portal/home",
-        headers={"Authorization": f"Bearer {first_access}"},
-    ).status_code == 200
+    assert (
+        test_client.get(
+            "/portal/home",
+            headers={"Authorization": f"Bearer {first_access}"},
+        ).status_code
+        == 200
+    )
 
     refresh = test_client.post("/portal/auth/refresh")
     assert refresh.status_code == 200, refresh.text
@@ -62,14 +65,20 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
     next_refresh = test_client.cookies.get(cookie_name)
     assert next_refresh and next_refresh != old_refresh
 
-    assert test_client.get(
-        "/portal/home",
-        headers={"Authorization": f"Bearer {first_access}"},
-    ).status_code == 401
-    assert test_client.get(
-        "/portal/home",
-        headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
-    ).status_code == 200
+    assert (
+        test_client.get(
+            "/portal/home",
+            headers={"Authorization": f"Bearer {first_access}"},
+        ).status_code
+        == 401
+    )
+    assert (
+        test_client.get(
+            "/portal/home",
+            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
+        ).status_code
+        == 200
+    )
 
     test_client.cookies.set(cookie_name, old_refresh, path=portal_auth_settings.REFRESH_COOKIE_PATH)
     reused = test_client.post("/portal/auth/refresh")
@@ -80,10 +89,13 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
     assert logout.status_code == 204, logout.text
     assert not test_client.cookies.get(cookie_name)
 
-    assert test_client.get(
-        "/portal/home",
-        headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
-    ).status_code == 401
+    assert (
+        test_client.get(
+            "/portal/home",
+            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
+        ).status_code
+        == 401
+    )
 
 
 def test_portal_auth_returns_generic_invalid_credentials(test_client: TestClient) -> None:
