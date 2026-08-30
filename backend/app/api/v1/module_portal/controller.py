@@ -4,8 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.base_schema import AuthSchema
-from app.core.dependencies import db_getter, get_optional_current_user
+from app.core.dependencies import db_getter
 
+from .auth_dependency import get_optional_portal_user
 from .database_service import DatabasePortalService
 from .runtime import PortalRuntimeState, get_portal_runtime_state, require_portal_runtime
 from .schema import (
@@ -25,7 +26,7 @@ PortalRouter = APIRouter()
 def _apply_no_store_headers(response: Response, state: PortalRuntimeState) -> None:
     response.headers["Cache-Control"] = "private, no-store, max-age=0"
     response.headers["Pragma"] = "no-cache"
-    response.headers["Vary"] = "Authorization"
+    response.headers["Vary"] = "Authorization, Cookie"
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Portal-Data-Source"] = state.data_source
 
@@ -53,7 +54,7 @@ async def portal_health(response: Response) -> PortalHealth:
 async def get_home(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
 ) -> HomeResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
@@ -65,7 +66,7 @@ async def get_home(
 async def get_academy(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
 ) -> AcademyResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
@@ -77,7 +78,7 @@ async def get_academy(
 async def get_profile(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
 ) -> ProfileResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
@@ -89,7 +90,7 @@ async def get_profile(
 async def get_content_detail(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
     content_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
 ) -> ContentDetailResponse:
     state = _prepare_response(response)
@@ -106,7 +107,7 @@ async def get_content_detail(
 async def get_course_detail(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
     course_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
 ) -> CourseDetailResponse:
     state = _prepare_response(response)
@@ -123,7 +124,7 @@ async def get_course_detail(
 async def get_member_center(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_current_user)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
 ) -> MemberCenterResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
