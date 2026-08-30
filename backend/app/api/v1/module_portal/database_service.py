@@ -12,6 +12,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.api.v1.module_content.article.model import ContentModel
 from app.api.v1.module_membership.entitlement import (
     EntitlementContext,
+    EntitlementFailure,
     as_utc,
     count_active_members,
     evaluate_content_access,
@@ -37,13 +38,14 @@ from .schema import (
     MemberSummary,
     PinnedItem,
     ProfileResponse,
+    UnlockAction,
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
 
 class DatabasePortalService:
-    """面向 H5/App 的真实数据库 Portal Provider。"""
+    """面向 H5 的真实数据库 Portal Provider。"""
 
     def __init__(
         self,
@@ -123,26 +125,12 @@ class DatabasePortalService:
             required_plan_ids=set(content.plan_ids),
             context=context,
         )
-        if not decision.can_access:
-            if decision.failure == "login_required":
-                raise CustomException(
-                    msg="请登录后查看该内容",
-                    code=RET.UNAUTHORIZED.code,
-                    status_code=RET.UNAUTHORIZED.code,
-                )
-            if decision.failure == "membership_required":
-                raise CustomException(
-                    msg="该内容仅限有效会员查看",
-                    code=RET.FORBIDDEN.code,
-                    status_code=RET.FORBIDDEN.code,
-                )
-            raise CustomException(
-                msg="当前会员套餐不包含该内容",
-                code=RET.FORBIDDEN.code,
-                status_code=RET.FORBIDDEN.code,
-            )
+        unlock_action, unlock_message = self._content_unlock_prompt(decision.failure)
 
-        body_text = html.unescape(_TAG_RE.sub(" ", content.body or ""))
+        # Locked users only receive public metadata. Reading time is derived from the summary,
+        # not the protected body, so response metadata does not leak hidden body length.
+        reading_source = content.body if decision.can_access else content.summary or ""
+        body_text = html.unescape(_TAG_RE.sub(" ", reading_source))
         reading_minutes = max(1, min(1440, math.ceil(len(body_text.strip()) / 400)))
         return ContentDetailResponse(
             id=content.id,
@@ -152,17 +140,20 @@ class DatabasePortalService:
             cover_url=content.cover_url,
             published_at=content.published_at or content.updated_time,
             access_level=content.access_level,
-            can_access=True,
+            can_access=decision.can_access,
+            lock_reason=decision.failure,
+            unlock_action=unlock_action,
+            unlock_message=unlock_message,
             like_count=content.like_count,
             comment_count=content.comment_count,
             reading_minutes=reading_minutes,
             author=self._author(content),
-            body_html=content.body,
+            body_html=content.body if decision.can_access else None,
             sections=[],
         )
 
     async def course_detail(self, course_id: int) -> CourseDetailResponse | None:
-        # M2.3 不伪造课程数据；课程域完成后在此接入。
+        # 课程域尚未落库时不伪造生产数据；完成课程模型后在此接入。
         return None
 
     async def member_center(self) -> MemberCenterResponse:
@@ -348,6 +339,18 @@ class DatabasePortalService:
             liked_by_names=[],
             comments=[],
         )
+
+    @staticmethod
+    def _content_unlock_prompt(
+        failure: EntitlementFailure | None,
+    ) -> tuple[UnlockAction | None, str | None]:
+        if failure == "login_required":
+            return "login", "登录后可查看完整正文"
+        if failure == "membership_required":
+            return "member", "开通有效会员后可查看完整正文"
+        if failure == "plan_required":
+            return "upgrade", "升级到适用会员套餐后可查看完整正文"
+        return None, None
 
     @staticmethod
     def _author(content: ContentModel) -> Author:
