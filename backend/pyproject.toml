@@ -35,13 +35,13 @@ dependencies = [
     "aiomysql>=0.2.0",
     "asyncpg==0.31.0",
     "psycopg[binary]==3.3.2",
-    "pymysql==1.2.0",
+    "pymysql[rsa]==1.2.0",
     "openai==2.46.0",
     "pydantic[email]>=2.12.5",
 ]
 
 [project.optional-dependencies]
-mysql = ["aiomysql>=0.2.0"]
+mysql = ["aiomysql>=0.2.0", "pymysql[rsa]==1.2.0"]
 postgres = ["asyncpg==0.31.0"]
 sqlite = ["aiosqlite==0.22.1"]
 
