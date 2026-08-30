@@ -10,6 +10,9 @@ on:
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
       - "backend/app/init_app.py"
+      - "backend/pyproject.toml"
+      - "backend/requirements.txt"
+      - "backend/uv.lock"
       - "backend/tests/test_portal_auth.py"
       - "backend/tests/test_portal_content_preview.py"
       - "backend/tests/test_portal_entitlement.py"
@@ -22,6 +25,9 @@ on:
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
       - "backend/app/init_app.py"
+      - "backend/pyproject.toml"
+      - "backend/requirements.txt"
+      - "backend/uv.lock"
       - "backend/tests/test_portal_auth.py"
       - "backend/tests/test_portal_content_preview.py"
       - "backend/tests/test_portal_entitlement.py"
@@ -154,6 +160,23 @@ jobs:
 
       - name: Sync locked dependencies
         run: uv sync --frozen
+
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE IF NOT EXISTS sys_user "
+                      "(id INT PRIMARY KEY) ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
 
       - name: Upgrade MySQL schema
         run: uv run alembic -c alembic.ini upgrade head
