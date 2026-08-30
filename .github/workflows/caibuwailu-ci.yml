@@ -26,6 +26,9 @@ jobs:
   portal-contract:
     name: Portal API contract
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,14 +44,13 @@ jobs:
           enable-cache: true
 
       - name: Sync locked backend dependencies
-        working-directory: backend
         run: uv sync --frozen
 
       - name: Compile Portal module
-        run: uv run --directory backend python -m compileall -q app/api/v1/module_portal
+        run: uv run python -m compileall -q app/api/v1/module_portal
 
       - name: Run Portal contract tests
-        run: uv run --directory backend pytest -q contract_tests/test_portal_service.py
+        run: uv run pytest -q contract_tests/test_portal_service.py
 
   h5-build:
     name: H5 typecheck and build
