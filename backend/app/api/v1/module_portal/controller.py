@@ -86,7 +86,7 @@ async def get_profile(
     return await DatabasePortalService(db, auth).profile()
 
 
-@PortalRouter.get("/content/{content_id}", summary="获取投研内容详情")
+@PortalRouter.get("/content/{content_id}", summary="获取投研内容详情（严格权限）")
 async def get_content_detail(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
@@ -98,6 +98,23 @@ async def get_content_detail(
         result = PortalService.content_detail(content_id)
     else:
         result = await DatabasePortalService(db, auth).content_detail(content_id)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容不存在")
+    return result
+
+
+@PortalRouter.get("/content/{content_id}/preview", summary="获取 H5 安全内容预览")
+async def get_content_preview(
+    response: Response,
+    db: Annotated[AsyncSession, Depends(db_getter)],
+    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    content_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
+) -> ContentDetailResponse:
+    state = _prepare_response(response)
+    if state.data_source == "demo":
+        result = PortalService.content_detail(content_id)
+    else:
+        result = await DatabasePortalService(db, auth).content_preview(content_id)
     if result is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容不存在")
     return result
