@@ -57,6 +57,14 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
         == 200
     )
 
+    system_profile = test_client.get(
+        "/system/user/current/info",
+        params={"check_data_scope": "false"},
+        headers={"Authorization": f"Bearer {first_access}"},
+    )
+    assert system_profile.status_code == 401
+    assert "客户端会话类型" in system_profile.json()["msg"]
+
     refresh = test_client.post("/portal/auth/refresh")
     assert refresh.status_code == 200, refresh.text
     refresh_data = refresh.json()
