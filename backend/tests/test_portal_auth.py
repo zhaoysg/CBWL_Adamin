@@ -114,7 +114,7 @@ def test_portal_captcha_disabled_contract(test_client: TestClient) -> None:
     assert response.json() == {"enable": False, "key": "disabled", "question": None}
 
 
-def test_production_guard_rejects_non_mysql_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+def _set_safe_production_settings(monkeypatch: pytest.MonkeyPatch, *, database_type: str) -> None:
     monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentEnum.PROD)
     monkeypatch.setattr(settings, "SECRET_KEY", "x" * 48)
     monkeypatch.setattr(settings, "PROD_CORS_ORIGINS", "https://admin.example.com,https://m.example.com")
@@ -122,40 +122,26 @@ def test_production_guard_rejects_non_mysql_runtime(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(settings, "ALLOW_CREDENTIALS", True)
     monkeypatch.setattr(settings, "ACCESS_TOKEN_EXPIRE_SECONDS", 900)
     monkeypatch.setattr(settings, "REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
-    monkeypatch.setattr(settings, "DATABASE_TYPE", "sqlite")
+    monkeypatch.setattr(settings, "DATABASE_TYPE", database_type)
     monkeypatch.setattr(settings, "DATABASE_HOST", "mysql.internal")
     monkeypatch.setattr(settings, "DATABASE_USER", "caibuwailu")
     monkeypatch.setattr(settings, "DATABASE_PASSWORD", "test-only-password")
     monkeypatch.setattr(settings, "DATABASE_NAME", "caibuwailu")
 
     monkeypatch.setattr(portal_auth_settings, "ALLOWED_ORIGINS", "https://m.example.com")
+    monkeypatch.setattr(portal_auth_settings, "REFRESH_COOKIE_PATH", "/api/v1/portal/auth")
     monkeypatch.setattr(portal_auth_settings, "REFRESH_COOKIE_SECURE", True)
     monkeypatch.setattr(portal_auth_settings, "RATE_LIMIT_ENABLE", True)
     monkeypatch.setattr(portal_auth_settings, "ALLOW_SUPERUSER_LOGIN", False)
     monkeypatch.setattr(portal_auth_settings, "ALLOWED_LOGIN_TYPES", "H5")
 
+
+def test_production_guard_rejects_non_mysql_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_safe_production_settings(monkeypatch, database_type="sqlite")
     with pytest.raises(UnsafeProductionConfiguration, match="DATABASE_TYPE=mysql"):
         validate_production_settings()
 
 
 def test_production_guard_accepts_remote_mysql_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentEnum.PROD)
-    monkeypatch.setattr(settings, "SECRET_KEY", "x" * 48)
-    monkeypatch.setattr(settings, "PROD_CORS_ORIGINS", "https://admin.example.com,https://m.example.com")
-    monkeypatch.setattr(settings, "ALLOWED_HOSTS", ["api.example.com"])
-    monkeypatch.setattr(settings, "ALLOW_CREDENTIALS", True)
-    monkeypatch.setattr(settings, "ACCESS_TOKEN_EXPIRE_SECONDS", 900)
-    monkeypatch.setattr(settings, "REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
-    monkeypatch.setattr(settings, "DATABASE_TYPE", "mysql")
-    monkeypatch.setattr(settings, "DATABASE_HOST", "mysql.internal")
-    monkeypatch.setattr(settings, "DATABASE_USER", "caibuwailu")
-    monkeypatch.setattr(settings, "DATABASE_PASSWORD", "test-only-password")
-    monkeypatch.setattr(settings, "DATABASE_NAME", "caibuwailu")
-
-    monkeypatch.setattr(portal_auth_settings, "ALLOWED_ORIGINS", "https://m.example.com")
-    monkeypatch.setattr(portal_auth_settings, "REFRESH_COOKIE_SECURE", True)
-    monkeypatch.setattr(portal_auth_settings, "RATE_LIMIT_ENABLE", True)
-    monkeypatch.setattr(portal_auth_settings, "ALLOW_SUPERUSER_LOGIN", False)
-    monkeypatch.setattr(portal_auth_settings, "ALLOWED_LOGIN_TYPES", "H5")
-
+    _set_safe_production_settings(monkeypatch, database_type="mysql")
     validate_production_settings()
