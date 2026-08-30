@@ -9,7 +9,9 @@ on:
       - "backend/app/api/v1/module_portal/**"
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
+      - "backend/app/init_app.py"
       - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_content_preview.py"
       - "backend/tests/test_portal_entitlement.py"
       - ".github/workflows/caibuwailu-h5-platform-ci.yml"
   pull_request:
@@ -19,7 +21,9 @@ on:
       - "backend/app/api/v1/module_portal/**"
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
+      - "backend/app/init_app.py"
       - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_content_preview.py"
       - "backend/tests/test_portal_entitlement.py"
       - ".github/workflows/caibuwailu-h5-platform-ci.yml"
 
@@ -32,7 +36,7 @@ concurrency:
 
 jobs:
   backend-quality:
-    name: Portal auth, entitlement and security gates
+    name: Portal auth, preview, entitlement and security gates
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -60,7 +64,9 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/init_app.py
           tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
 
       - name: Ruff lint
         run: >-
@@ -68,7 +74,9 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/init_app.py
           tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
           tests/test_portal_entitlement.py
 
       - name: Ruff format check
@@ -77,7 +85,9 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/init_app.py
           tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
           tests/test_portal_entitlement.py
 
       - name: Security scan Portal boundary
@@ -87,12 +97,13 @@ jobs:
           app/config/portal_auth.py
           app/config/production_guard.py
 
-      - name: Run Portal authentication and entitlement tests
+      - name: Run Portal authentication, preview and entitlement tests
         env:
           PORTAL_DATA_SOURCE: database
         run: >-
           uv run pytest -q
           tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
           tests/test_portal_entitlement.py
           tests/test_main.py
 
@@ -147,18 +158,21 @@ jobs:
       - name: Upgrade MySQL schema
         run: uv run alembic -c alembic.ini upgrade head
 
-      - name: Verify synchronous and asynchronous MySQL connections
+      - name: Verify synchronous and asynchronous MySQL connections and tables
         run: |
           uv run python - <<'PY'
           import asyncio
-          from sqlalchemy import text
+          from sqlalchemy import inspect, text
           from app.config.setting import settings
           from app.core.database import async_engine, engine
 
+          expected = {"sys_user", "cw_content", "cw_member_plan", "cw_member_subscription"}
           assert settings.DATABASE_TYPE == "mysql"
           assert engine.dialect.name == "mysql"
           with engine.connect() as connection:
               assert connection.scalar(text("SELECT 1")) == 1
+              tables = set(inspect(connection).get_table_names())
+              assert expected <= tables, expected - tables
 
           async def main() -> None:
               assert async_engine.dialect.name == "mysql"
@@ -168,9 +182,3 @@ jobs:
 
           asyncio.run(main())
           PY
-
-      - name: Verify expected Portal tables exist in MySQL
-        run: |
-          mysql -h 127.0.0.1 -ucaibuwailu -pcaibuwailu-ci caibuwailu -Nse \
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='caibuwailu' AND table_name IN ('sys_user','cw_content','cw_member_plan','cw_member_subscription');" \
-            | grep -qx '4'
