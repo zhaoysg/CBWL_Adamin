@@ -12,6 +12,7 @@ from sqlalchemy.orm import joinedload, selectinload
 from app.api.v1.module_content.article.model import ContentModel
 from app.api.v1.module_membership.entitlement import (
     EntitlementContext,
+    EntitlementDecision,
     EntitlementFailure,
     as_utc,
     count_active_members,
@@ -115,42 +116,25 @@ class DatabasePortalService:
         )
 
     async def content_detail(self, content_id: int) -> ContentDetailResponse | None:
+        """Backward-compatible strict detail endpoint.
+
+        Existing clients continue receiving 401/403 for protected content. The independent H5
+        uses ``content_preview`` so guests can receive safe public metadata without the body.
+        """
         content = await self._published_content(content_id)
         if content is None:
             return None
+        decision = await self._content_decision(content)
+        self._raise_content_denied(decision)
+        return self._content_response(content, decision)
 
-        context = await self._entitlement_context()
-        decision = evaluate_content_access(
-            access_level=content.access_level,
-            required_plan_ids=set(content.plan_ids),
-            context=context,
-        )
-        unlock_action, unlock_message = self._content_unlock_prompt(decision.failure)
-
-        # Locked users only receive public metadata. Reading time is derived from the summary,
-        # not the protected body, so response metadata does not leak hidden body length.
-        reading_source = content.body if decision.can_access else content.summary or ""
-        body_text = html.unescape(_TAG_RE.sub(" ", reading_source))
-        reading_minutes = max(1, min(1440, math.ceil(len(body_text.strip()) / 400)))
-        return ContentDetailResponse(
-            id=content.id,
-            category=content.category.category_name,
-            title=content.title,
-            summary=content.summary or "",
-            cover_url=content.cover_url,
-            published_at=content.published_at or content.updated_time,
-            access_level=content.access_level,
-            can_access=decision.can_access,
-            lock_reason=decision.failure,
-            unlock_action=unlock_action,
-            unlock_message=unlock_message,
-            like_count=content.like_count,
-            comment_count=content.comment_count,
-            reading_minutes=reading_minutes,
-            author=self._author(content),
-            body_html=content.body if decision.can_access else None,
-            sections=[],
-        )
+    async def content_preview(self, content_id: int) -> ContentDetailResponse | None:
+        """Return safe metadata to guests and the complete body only when authorized."""
+        content = await self._published_content(content_id)
+        if content is None:
+            return None
+        decision = await self._content_decision(content)
+        return self._content_response(content, decision)
 
     async def course_detail(self, course_id: int) -> CourseDetailResponse | None:
         # 课程域尚未落库时不伪造生产数据；完成课程模型后在此接入。
@@ -232,6 +216,68 @@ class DatabasePortalService:
             )
         )
         return result.scalars().unique().first()
+
+    async def _content_decision(self, content: ContentModel) -> EntitlementDecision:
+        context = await self._entitlement_context()
+        return evaluate_content_access(
+            access_level=content.access_level,
+            required_plan_ids=set(content.plan_ids),
+            context=context,
+        )
+
+    def _content_response(
+        self,
+        content: ContentModel,
+        decision: EntitlementDecision,
+    ) -> ContentDetailResponse:
+        unlock_action, unlock_message = self._content_unlock_prompt(decision.failure)
+
+        # Locked users only receive public metadata. Reading time is derived from the summary,
+        # not the protected body, so response metadata does not leak hidden body length.
+        reading_source = content.body if decision.can_access else content.summary or ""
+        body_text = html.unescape(_TAG_RE.sub(" ", reading_source))
+        reading_minutes = max(1, min(1440, math.ceil(len(body_text.strip()) / 400)))
+        return ContentDetailResponse(
+            id=content.id,
+            category=content.category.category_name,
+            title=content.title,
+            summary=content.summary or "",
+            cover_url=content.cover_url,
+            published_at=content.published_at or content.updated_time,
+            access_level=content.access_level,
+            can_access=decision.can_access,
+            lock_reason=decision.failure,
+            unlock_action=unlock_action,
+            unlock_message=unlock_message,
+            like_count=content.like_count,
+            comment_count=content.comment_count,
+            reading_minutes=reading_minutes,
+            author=self._author(content),
+            body_html=content.body if decision.can_access else None,
+            sections=[],
+        )
+
+    @staticmethod
+    def _raise_content_denied(decision: EntitlementDecision) -> None:
+        if decision.can_access:
+            return
+        if decision.failure == "login_required":
+            raise CustomException(
+                msg="请登录后查看该内容",
+                code=RET.UNAUTHORIZED.code,
+                status_code=RET.UNAUTHORIZED.code,
+            )
+        if decision.failure == "membership_required":
+            raise CustomException(
+                msg="该内容仅限有效会员查看",
+                code=RET.FORBIDDEN.code,
+                status_code=RET.FORBIDDEN.code,
+            )
+        raise CustomException(
+            msg="当前会员套餐不包含该内容",
+            code=RET.FORBIDDEN.code,
+            status_code=RET.FORBIDDEN.code,
+        )
 
     async def _entitlement_context(self) -> EntitlementContext:
         if self._context is None:
