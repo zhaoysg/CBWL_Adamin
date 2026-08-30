@@ -25,7 +25,7 @@ async def get_optional_portal_user(
     if not token:
         return None
     await _validate_portal_access_token(redis=redis, token=token)
-    return await _authenticate(token, db, redis)
+    return await _authenticate(token, db, redis, allow_portal_session=True)
 
 
 async def get_current_portal_user(
