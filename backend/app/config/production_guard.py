@@ -57,6 +57,10 @@ def validate_production_settings() -> None:
         errors.append("Portal Refresh Cookie 需要 ALLOW_CREDENTIALS=True")
     if not portal_auth_settings.REFRESH_COOKIE_SECURE:
         errors.append("生产 Portal Refresh Cookie 必须启用 Secure")
+
+    expected_cookie_path = f"{settings.ROOT_PATH.rstrip('/')}/portal/auth" or "/portal/auth"
+    if portal_auth_settings.REFRESH_COOKIE_PATH != expected_cookie_path:
+        errors.append(f"生产 Portal Refresh Cookie Path 必须为 {expected_cookie_path}")
     if not portal_auth_settings.RATE_LIMIT_ENABLE:
         errors.append("生产 Portal 登录与验证码必须启用 Redis 限流")
     if portal_auth_settings.ALLOW_SUPERUSER_LOGIN:
