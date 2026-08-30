@@ -116,6 +116,15 @@ class PortalAuthService:
                 ) from exc
             raise
 
+        if bool(result.user_info.get("is_superuser")) and not portal_auth_settings.ALLOW_SUPERUSER_LOGIN:
+            await LoginService.logout(redis=redis, token=result.refresh_token)
+            logger.warning("拒绝超级管理员账号登录 H5: username={}", data.username)
+            raise CustomException(
+                msg="管理员账号不能用于 H5 登录",
+                code=RET.FORBIDDEN.code,
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         user = PortalAuthUser.model_validate(
             {
                 "id": result.user_info.get("id"),
