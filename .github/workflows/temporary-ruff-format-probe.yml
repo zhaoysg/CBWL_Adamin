@@ -1,0 +1,28 @@
+name: Temporary Ruff format probe
+
+on:
+  push:
+    branches:
+      - feature/h5-platform-auth-mysql
+    paths:
+      - "backend/tests/test_portal_auth.py"
+      - ".github/workflows/temporary-ruff-format-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --frozen
+      - name: Show formatter diff
+        run: uv run ruff format --diff tests/test_portal_auth.py
