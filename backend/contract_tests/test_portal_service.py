@@ -1,4 +1,5 @@
 from decimal import Decimal
+from unittest.mock import AsyncMock
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from app.api.v1.module_portal.service import PortalService
 
 def _client() -> TestClient:
     app = FastAPI()
+    app.state.redis = AsyncMock()
     app.include_router(portal_router, prefix="/api/v1")
     return TestClient(app)
 
