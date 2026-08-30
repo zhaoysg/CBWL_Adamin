@@ -9,6 +9,7 @@ on:
       - "backend/app/api/v1/module_portal/**"
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
+      - "backend/app/core/dependencies.py"
       - "backend/app/init_app.py"
       - "backend/pyproject.toml"
       - "backend/requirements.txt"
@@ -24,6 +25,7 @@ on:
       - "backend/app/api/v1/module_portal/**"
       - "backend/app/config/portal_auth.py"
       - "backend/app/config/production_guard.py"
+      - "backend/app/core/dependencies.py"
       - "backend/app/init_app.py"
       - "backend/pyproject.toml"
       - "backend/requirements.txt"
@@ -70,6 +72,7 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/core/dependencies.py
           app/init_app.py
           tests/test_portal_auth.py
           tests/test_portal_content_preview.py
@@ -80,6 +83,7 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/core/dependencies.py
           app/init_app.py
           tests/test_portal_auth.py
           tests/test_portal_content_preview.py
@@ -91,6 +95,7 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/core/dependencies.py
           app/init_app.py
           tests/test_portal_auth.py
           tests/test_portal_content_preview.py
@@ -102,6 +107,7 @@ jobs:
           app/api/v1/module_portal
           app/config/portal_auth.py
           app/config/production_guard.py
+          app/core/dependencies.py
 
       - name: Run Portal authentication, preview and entitlement tests
         env:
