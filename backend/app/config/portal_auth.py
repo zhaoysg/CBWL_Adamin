@@ -24,6 +24,7 @@ class PortalAuthSettings(BaseSettings):
 
     ALLOWED_ORIGINS: str = ""
     ALLOWED_LOGIN_TYPES: str = "H5,移动端"
+    ALLOW_SUPERUSER_LOGIN: bool = False
 
     REFRESH_COOKIE_NAME: str = "cbwl_portal_refresh"
     REFRESH_COOKIE_PATH: str = "/"
