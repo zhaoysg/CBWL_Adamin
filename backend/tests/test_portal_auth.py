@@ -114,6 +114,19 @@ def test_portal_captcha_disabled_contract(test_client: TestClient) -> None:
     assert response.json() == {"enable": False, "key": "disabled", "question": None}
 
 
+def test_portal_login_rejects_legacy_h5_captcha_field(test_client: TestClient) -> None:
+    response = test_client.post(
+        "/portal/auth/login",
+        json={
+            "username": "legacy_h5_client",
+            "password": "Portal123!",
+            "captcha_key": "legacy-key",
+            "captcha": "7",
+        },
+    )
+    assert response.status_code == 422
+
+
 def _set_safe_production_settings(monkeypatch: pytest.MonkeyPatch, *, database_type: str) -> None:
     monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentEnum.PROD)
     monkeypatch.setattr(settings, "SECRET_KEY", "x" * 48)
