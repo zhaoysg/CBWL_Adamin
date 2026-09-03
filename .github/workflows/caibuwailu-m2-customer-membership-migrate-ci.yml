@@ -1,0 +1,213 @@
+name: 财不外露 M2 客户会员迁移 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m2-customer-membership-migrate
+    paths:
+      - "backend/app/api/v1/module_identity/legacy/**"
+      - "backend/app/scripts/migrate_legacy_customers.py"
+      - "backend/tests/test_legacy_customer_migration_command.py"
+      - "backend/tests/mysql/legacy_customer_migration_fixture.py"
+      - "backend/tests/mysql/verify_legacy_customer_migration.py"
+      - ".github/workflows/caibuwailu-m2-customer-membership-migrate-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/api/v1/module_identity/legacy/**"
+      - "backend/app/scripts/migrate_legacy_customers.py"
+      - "backend/tests/test_legacy_customer_migration_command.py"
+      - "backend/tests/mysql/legacy_customer_migration_fixture.py"
+      - "backend/tests/mysql/verify_legacy_customer_migration.py"
+      - ".github/workflows/caibuwailu-m2-customer-membership-migrate-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m2-customer-membership-migrate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  migration-quality:
+    name: Migration command, locking and safety contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile migration files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_identity/legacy
+          app/scripts/migrate_legacy_customers.py
+          tests/test_legacy_customer_migration_command.py
+          tests/mysql
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_identity/legacy
+          app/scripts/migrate_legacy_customers.py
+          tests/test_legacy_customer_migration_command.py
+          tests/mysql
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_identity/legacy
+          app/scripts/migrate_legacy_customers.py
+          tests/test_legacy_customer_migration_command.py
+          tests/mysql
+
+      - name: Security scan migration implementation
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_identity/legacy
+          app/scripts/migrate_legacy_customers.py
+
+      - name: Run command safety contracts
+        run: >-
+          uv run pytest -q
+          tests/test_customer_membership_expand.py
+          tests/test_legacy_customer_migration_command.py
+
+  mysql-migration:
+    name: MySQL 8.4 transactional, idempotency and rollback verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system identity fixtures
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user ("
+                      "id INT PRIMARY KEY, "
+                      "username VARCHAR(64) NOT NULL UNIQUE, "
+                      "password VARCHAR(255) NOT NULL, "
+                      "name VARCHAR(32) NOT NULL, "
+                      "avatar VARCHAR(255) NULL, "
+                      "is_superuser BOOL NOT NULL DEFAULT FALSE, "
+                      "status INT NOT NULL DEFAULT 0, "
+                      "dept_id INT NULL, "
+                      "is_deleted BOOL NOT NULL DEFAULT FALSE"
+                      ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user_roles ("
+                      "user_id INT NOT NULL, role_id INT NOT NULL, "
+                      "PRIMARY KEY (user_id, role_id)"
+                      ") ENGINE=InnoDB"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user_positions ("
+                      "user_id INT NOT NULL, position_id INT NOT NULL, "
+                      "PRIMARY KEY (user_id, position_id)"
+                      ") ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through membership expand head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify transactional customer migration
+        run: >-
+          uv run python -m
+          tests.mysql.verify_legacy_customer_migration
+
+      - name: Verify guarded command dry-run and idempotent apply
+        run: |
+          uv run python -m app.scripts.migrate_legacy_customers \
+            --legacy-user-id 101 \
+            --report-json /tmp/customer-plan.json
+          test "$(stat -c '%a' /tmp/customer-plan.json)" = "600"
+          PLAN_DIGEST="$(uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          print(json.loads(Path('/tmp/customer-plan.json').read_text())['plan_digest'])
+          PY
+          )"
+          uv run python -m app.scripts.migrate_legacy_customers \
+            --apply \
+            --legacy-user-id 101 \
+            --plan-digest "${PLAN_DIGEST}" \
+            --report-json /tmp/customer-apply.json
+          test "$(stat -c '%a' /tmp/customer-apply.json)" = "600"
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/customer-apply.json').read_text())
+          assert report['failures'] == []
+          assert report['results'][0]['created'] is False
+          assert report['results'][0]['subscriptions_backfilled'] == 0
+          PY
