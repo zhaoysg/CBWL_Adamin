@@ -83,6 +83,7 @@ def register_routers(app: FastAPI) -> None:
     from app.api.v1.module_membership import membership_router
     from app.api.v1.module_monitor import monitor_router
     from app.api.v1.module_portal import portal_router
+    from app.api.v1.module_portal.auth_controller import PortalAuthRouter
     from app.api.v1.module_system import system_router
     from app.api.v1.module_task import task_router
 
@@ -94,6 +95,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(task_router)
     app.include_router(membership_router)
     app.include_router(content_router)
+    app.include_router(PortalAuthRouter, prefix="/portal")
     app.include_router(portal_router)
 
     from app.core.discover import dynamic_router

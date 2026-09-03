@@ -1,0 +1,213 @@
+name: 财不外露 H5 平台与 MySQL CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/h5-platform-auth-mysql
+    paths:
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/config/production_guard.py"
+      - "backend/app/core/dependencies.py"
+      - "backend/app/init_app.py"
+      - "backend/pyproject.toml"
+      - "backend/requirements.txt"
+      - "backend/uv.lock"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_content_preview.py"
+      - "backend/tests/test_portal_entitlement.py"
+      - ".github/workflows/caibuwailu-h5-platform-ci.yml"
+  pull_request:
+    branches:
+      - master
+    paths:
+      - "backend/app/api/v1/module_portal/**"
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/config/production_guard.py"
+      - "backend/app/core/dependencies.py"
+      - "backend/app/init_app.py"
+      - "backend/pyproject.toml"
+      - "backend/requirements.txt"
+      - "backend/uv.lock"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_content_preview.py"
+      - "backend/tests/test_portal_entitlement.py"
+      - ".github/workflows/caibuwailu-h5-platform-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-h5-platform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-quality:
+    name: Portal auth, preview, entitlement and security gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile changed backend files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_portal
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/core/dependencies.py
+          app/init_app.py
+          tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_portal
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/core/dependencies.py
+          app/init_app.py
+          tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
+          tests/test_portal_entitlement.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_portal
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/core/dependencies.py
+          app/init_app.py
+          tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
+          tests/test_portal_entitlement.py
+
+      - name: Security scan Portal boundary
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_portal
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/core/dependencies.py
+
+      - name: Run Portal authentication, preview and entitlement tests
+        env:
+          PORTAL_DATA_SOURCE: database
+        run: >-
+          uv run pytest -q
+          tests/test_portal_auth.py
+          tests/test_portal_content_preview.py
+          tests/test_portal_entitlement.py
+          tests/test_main.py
+
+  mysql-connectivity:
+    name: MySQL 8.4 migration and connectivity
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing-system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE IF NOT EXISTS sys_user "
+                      "(id INT PRIMARY KEY) ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Upgrade MySQL schema
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify synchronous and asynchronous MySQL connections and tables
+        run: |
+          uv run python - <<'PY'
+          import asyncio
+          from sqlalchemy import inspect, text
+          from app.config.setting import settings
+          from app.core.database import async_engine, engine
+
+          expected = {"sys_user", "cw_content", "cw_member_plan", "cw_member_subscription"}
+          assert settings.DATABASE_TYPE == "mysql"
+          assert engine.dialect.name == "mysql"
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT 1")) == 1
+              tables = set(inspect(connection).get_table_names())
+              assert expected <= tables, expected - tables
+
+          async def main() -> None:
+              assert async_engine.dialect.name == "mysql"
+              async with async_engine.connect() as connection:
+                  assert await connection.scalar(text("SELECT 1")) == 1
+              await async_engine.dispose()
+
+          asyncio.run(main())
+          PY
