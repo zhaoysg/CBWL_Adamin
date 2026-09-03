@@ -28,6 +28,7 @@ jobs:
   identity-quality:
     name: Identity model, transaction and security gates
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: backend
@@ -102,6 +103,7 @@ jobs:
   mysql-identity-roundtrip:
     name: MySQL 8.4 identity upgrade, downgrade and re-upgrade
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       mysql:
         image: mysql:8.4
@@ -228,3 +230,22 @@ jobs:
 
       - name: Re-upgrade identity migration
         run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify re-upgraded identity head
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.config.setting import settings
+
+          expected = {
+              "auth_subject",
+              "auth_identity",
+              "sys_admin_account",
+              "cw_customer",
+          }
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT 1")) == 1
+              assert expected <= set(inspect(connection).get_table_names())
+          engine.dispose()
+          PY
