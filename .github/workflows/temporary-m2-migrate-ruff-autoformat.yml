@@ -1,0 +1,54 @@
+name: Temporary M2 migrate Ruff autoformat
+
+on:
+  push:
+    branches:
+      - feature/m2-customer-membership-migrate
+    paths:
+      - ".github/workflows/temporary-m2-migrate-ruff-autoformat.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m2-customer-membership-migrate
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - working-directory: backend
+        run: uv sync --frozen
+
+      - name: Apply repository Ruff formatter
+        working-directory: backend
+        run: >-
+          uv run ruff format
+          app/api/v1/module_identity/legacy
+          app/scripts/migrate_legacy_customers.py
+          tests/test_legacy_customer_migration_command.py
+          tests/mysql
+
+      - name: Commit formatting only when needed
+        run: |
+          if git diff --quiet; then
+            echo "Ruff formatting is already clean."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/app/api/v1/module_identity/legacy \
+            backend/app/scripts/migrate_legacy_customers.py \
+            backend/tests/test_legacy_customer_migration_command.py \
+            backend/tests/mysql
+          git commit -m "style(identity): apply migration Ruff formatting"
+          git push origin HEAD:feature/m2-customer-membership-migrate
