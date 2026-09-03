@@ -34,6 +34,7 @@ jobs:
         run: |
           rm -rf backend/app/api/v1/module_commerce/order_payment
           rm -f backend/tests/test_commerce_order_payment_expand.py
+          find backend -type d -name __pycache__ -prune -exec rm -rf {} +
           cat > backend/app/api/v1/module_commerce/__init__.py <<'PY'
           """Commerce domain transaction foundation.
 
@@ -66,17 +67,25 @@ jobs:
           ]
           PY
 
-      - name: Apply deterministic lint fixes
+      - name: Remove stale authentication API calls and apply lint fixes
         run: |
           python - <<'PY'
           from pathlib import Path
 
+          for path in Path("backend").rglob("*.py"):
+              text = path.read_text(encoding="utf-8")
+              if "principal.require_authenticated()" in text:
+                  text = text.replace(
+                      "principal.require_authenticated()",
+                      """if not principal.is_authenticated:\n            raise CommerceOwnershipError(\"authentication required\")""",
+                  )
+                  path.write_text(text, encoding="utf-8")
+
           path = Path("backend/tests/mysql/verify_commerce_order_payment_expand.py")
           text = path.read_text(encoding="utf-8")
           old = "collations = {name: collation for name, collation in rows}"
-          if old not in text:
-              raise SystemExit("expected collation comprehension not found")
-          path.write_text(text.replace(old, "collations = dict(rows)"), encoding="utf-8")
+          if old in text:
+              path.write_text(text.replace(old, "collations = dict(rows)"), encoding="utf-8")
           PY
           cd backend
           uv run ruff check --fix \
@@ -93,7 +102,10 @@ jobs:
       - name: Verify canonical module before commit
         working-directory: backend
         run: |
+          test ! -d app/api/v1/module_commerce/order_payment
+          test ! -f tests/test_commerce_order_payment_expand.py
           ! grep -R "module_commerce.order_payment" -n app tests
+          ! grep -R "require_authenticated" -n app/api/v1/module_commerce tests/test_commerce_order_payment.py
           uv run python -m compileall -q \
             app/api/v1/module_commerce \
             app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
