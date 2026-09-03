@@ -144,12 +144,7 @@ async def main() -> None:
         assert member_center.member.is_member is True
 
     async with async_db_session() as db, db.begin():
-        await db.execute(
-            text(
-                "UPDATE cw_member_subscription "
-                "SET customer_id = NULL WHERE id = 301"
-            )
-        )
+        await db.execute(text("UPDATE cw_member_subscription SET customer_id = NULL WHERE id = 301"))
     try:
         await _load(customer)
     except CustomException as exc:
@@ -158,12 +153,7 @@ async def main() -> None:
         raise AssertionError("dual-read mismatch did not fail closed")
 
     async with async_db_session() as db, db.begin():
-        await db.execute(
-            text(
-                "UPDATE cw_member_subscription "
-                "SET customer_id = 501 WHERE id = 301"
-            )
-        )
+        await db.execute(text("UPDATE cw_member_subscription SET customer_id = 501 WHERE id = 301"))
     portal_auth_settings.ENTITLEMENT_MODE = "customer"
     customer_context = await _load(customer)
     assert [item.id for item in customer_context.subscriptions] == [301]
@@ -174,9 +164,7 @@ async def main() -> None:
     except CustomException as exc:
         assert exc.status_code == 503
     else:
-        raise AssertionError(
-            "customer-only entitlement mode accepted legacy principal"
-        )
+        raise AssertionError("customer-only entitlement mode accepted legacy principal")
 
     print("portal entitlement dual-read MySQL verification passed")
 
