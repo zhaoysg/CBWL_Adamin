@@ -88,13 +88,20 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
         == 200
     )
 
-    test_client.cookies.set(cookie_name, old_refresh, path=portal_auth_settings.REFRESH_COOKIE_PATH)
-    reused = test_client.post("/portal/auth/refresh")
+    # Send the old token only on this request. Mutating the session-scoped
+    # client's cookie jar with ``Cookies.set`` and no domain creates a second,
+    # hostless cookie that the server cannot remove with its host-scoped
+    # Set-Cookie deletion, contaminating later tests.
+    reused = test_client.post(
+        "/portal/auth/refresh",
+        headers={"Cookie": f"{cookie_name}={old_refresh}"},
+    )
     assert reused.status_code == 401
+    assert test_client.cookies.get(cookie_name) == next_refresh
 
-    test_client.cookies.set(cookie_name, next_refresh, path=portal_auth_settings.REFRESH_COOKIE_PATH)
     logout = test_client.post("/portal/auth/logout")
     assert logout.status_code == 204, logout.text
+    assert "max-age=0" in logout.headers["set-cookie"].lower()
     assert not test_client.cookies.get(cookie_name)
 
     assert (
