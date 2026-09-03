@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
@@ -14,7 +16,7 @@ class PortalCaptchaResponse(PortalAuthModel):
 
 
 class PortalLoginInput(PortalAuthModel):
-    username: str = Field(min_length=2, max_length=32)
+    username: str = Field(min_length=2, max_length=191)
     password: str = Field(min_length=6, max_length=128)
     captcha_key: str | None = Field(default=None, min_length=1, max_length=128)
     captcha_answer: str | None = Field(default=None, min_length=1, max_length=8)
@@ -30,10 +32,14 @@ class PortalLoginInput(PortalAuthModel):
 
 
 class PortalAuthUser(PortalAuthModel):
-    id: int = Field(gt=0)
-    username: str = Field(min_length=1, max_length=32)
-    name: str | None = Field(default=None, max_length=64)
+    id: int = Field(gt=0, description="H5 当前公开主体ID")
+    username: str = Field(min_length=1, max_length=191)
+    name: str | None = Field(default=None, max_length=128)
     avatar: str | None = Field(default=None, max_length=1000)
+    identity_source: Literal["legacy", "customer"] = "legacy"
+    customer_id: int | None = Field(default=None, gt=0)
+    subject_id: int | None = Field(default=None, gt=0)
+    legacy_user_id: int | None = Field(default=None, gt=0)
 
 
 class PortalAuthSessionResponse(PortalAuthModel):

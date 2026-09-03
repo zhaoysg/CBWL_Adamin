@@ -1,0 +1,217 @@
+name: 财不外露 M3 Portal 客户双读认证 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m3-portal-customer-auth-dual
+    paths:
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/api/v1/module_portal/auth_schema.py"
+      - "backend/app/api/v1/module_portal/auth_service.py"
+      - "backend/app/api/v1/module_portal/auth_dependency.py"
+      - "backend/app/api/v1/module_portal/customer_auth.py"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_customer_auth_dual.py"
+      - "backend/tests/mysql/verify_portal_customer_auth_dual.py"
+      - ".github/workflows/caibuwailu-m3-portal-customer-auth-dual-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/api/v1/module_portal/auth_schema.py"
+      - "backend/app/api/v1/module_portal/auth_service.py"
+      - "backend/app/api/v1/module_portal/auth_dependency.py"
+      - "backend/app/api/v1/module_portal/customer_auth.py"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_customer_auth_dual.py"
+      - "backend/tests/mysql/verify_portal_customer_auth_dual.py"
+      - ".github/workflows/caibuwailu-m3-portal-customer-auth-dual-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m3-portal-customer-auth-dual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  customer-auth-quality:
+    name: Customer-first auth, fallback and session security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile changed files
+        run: >-
+          uv run python -m compileall -q
+          app/config/portal_auth.py
+          app/api/v1/module_portal/auth_schema.py
+          app/api/v1/module_portal/auth_service.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/customer_auth.py
+          tests/test_portal_customer_auth_dual.py
+          tests/mysql/verify_portal_customer_auth_dual.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/config/portal_auth.py
+          app/api/v1/module_portal/auth_schema.py
+          app/api/v1/module_portal/auth_service.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/customer_auth.py
+          tests/test_portal_auth.py
+          tests/test_portal_customer_auth_dual.py
+          tests/mysql/verify_portal_customer_auth_dual.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/config/portal_auth.py
+          app/api/v1/module_portal/auth_schema.py
+          app/api/v1/module_portal/auth_service.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/customer_auth.py
+          tests/test_portal_auth.py
+          tests/test_portal_customer_auth_dual.py
+          tests/mysql/verify_portal_customer_auth_dual.py
+
+      - name: Security scan Portal customer auth
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_portal/customer_auth.py
+          app/api/v1/module_portal/auth_service.py
+          app/api/v1/module_portal/auth_dependency.py
+
+      - name: Run Portal legacy and customer auth tests
+        run: >-
+          uv run pytest -q
+          tests/test_portal_auth.py
+          tests/test_portal_customer_auth_dual.py
+
+  mysql-customer-auth:
+    name: MySQL 8.4 customer identity resolution and session validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+      PORTAL_IDENTITY_MODE: dual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system identity fixtures
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(text("""
+                  CREATE TABLE sys_user (
+                      id INT PRIMARY KEY,
+                      uuid VARCHAR(64) NULL,
+                      is_deleted BOOL NOT NULL DEFAULT FALSE,
+                      created_time DATETIME NULL,
+                      updated_time DATETIME NULL,
+                      deleted_time DATETIME NULL,
+                      created_id INT NULL,
+                      updated_id INT NULL,
+                      deleted_id INT NULL,
+                      username VARCHAR(64) NOT NULL UNIQUE,
+                      password VARCHAR(255) NOT NULL,
+                      name VARCHAR(32) NOT NULL,
+                      mobile VARCHAR(11) NULL,
+                      email VARCHAR(64) NULL,
+                      gender VARCHAR(1) NULL,
+                      avatar VARCHAR(255) NULL,
+                      is_superuser BOOL NOT NULL DEFAULT FALSE,
+                      last_login DATETIME NULL,
+                      gitee_login VARCHAR(32) NULL,
+                      github_login VARCHAR(32) NULL,
+                      wx_login VARCHAR(32) NULL,
+                      qq_login VARCHAR(32) NULL,
+                      status INT NOT NULL DEFAULT 0,
+                      description TEXT NULL,
+                      dept_id INT NULL
+                  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+              """))
+              connection.execute(text("""
+                  CREATE TABLE sys_user_roles (
+                      user_id INT NOT NULL,
+                      role_id INT NOT NULL,
+                      PRIMARY KEY (user_id, role_id)
+                  ) ENGINE=InnoDB
+              """))
+              connection.execute(text("""
+                  CREATE TABLE sys_user_positions (
+                      user_id INT NOT NULL,
+                      position_id INT NOT NULL,
+                      PRIMARY KEY (user_id, position_id)
+                  ) ENGINE=InnoDB
+              """))
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through customer membership migration head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify customer-first authentication on MySQL
+        run: >-
+          uv run python -m
+          tests.mysql.verify_portal_customer_auth_dual
