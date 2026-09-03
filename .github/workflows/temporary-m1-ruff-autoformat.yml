@@ -1,0 +1,56 @@
+name: Temporary M1 Ruff autoformat
+
+on:
+  push:
+    branches:
+      - feature/m1-customer-identity
+    paths:
+      - "backend/app/api/v1/module_identity/**"
+      - "backend/app/alembic/versions/20260902_01_identity_boundary.py"
+      - "backend/tests/test_identity_boundary.py"
+      - ".github/workflows/temporary-m1-ruff-autoformat.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m1-customer-identity
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - run: uv sync --frozen
+
+      - name: Apply repository Ruff formatter
+        run: >-
+          uv run ruff format
+          app/api/v1/module_identity
+          app/alembic/versions/20260902_01_identity_boundary.py
+          tests/test_identity_boundary.py
+
+      - name: Commit formatting only when needed
+        working-directory: .
+        run: |
+          if git diff --quiet; then
+            echo "Ruff formatting is already clean."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/app/api/v1/module_identity \
+            backend/app/alembic/versions/20260902_01_identity_boundary.py \
+            backend/tests/test_identity_boundary.py
+          git commit -m "style(identity): apply Ruff formatting"
+          git push origin HEAD:feature/m1-customer-identity
