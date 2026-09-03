@@ -169,8 +169,6 @@ def upgrade() -> None:
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_auth_identity_subject_realm",
-            ondelete="CASCADE",
-            onupdate="CASCADE",
         ),
         sa.UniqueConstraint(
             "realm",
@@ -232,8 +230,6 @@ def upgrade() -> None:
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_sys_admin_account_subject_realm",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["legacy_sys_user_id"],
@@ -309,8 +305,6 @@ def upgrade() -> None:
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_cw_customer_subject_realm",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.UniqueConstraint("subject_id", name="uq_cw_customer_subject"),
         sa.UniqueConstraint("customer_no", name="uq_cw_customer_no"),
