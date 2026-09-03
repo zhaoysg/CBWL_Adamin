@@ -1,0 +1,37 @@
+name: Temporary format entitlement fixture
+
+on:
+  push:
+    branches:
+      - feature/m3-customer-entitlement-dual-read
+    paths:
+      - ".github/workflows/temporary-format-entitlement-fixture.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m3-customer-entitlement-dual-read
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+      - working-directory: backend
+        run: uv sync --frozen
+      - name: Format fixture
+        working-directory: backend
+        run: uv run ruff format tests/mysql/verify_portal_entitlement_dual_read.py
+      - name: Commit when changed
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/tests/mysql/verify_portal_entitlement_dual_read.py
+          git commit -m "style(portal): format entitlement MySQL fixture"
+          git push origin HEAD:feature/m3-customer-entitlement-dual-read
