@@ -1,0 +1,80 @@
+name: Temporary M4 format and canonical test v2
+
+on:
+  push:
+    branches:
+      - feature/m4-commerce-order-payment-expand
+    paths:
+      - ".github/workflows/temporary-m4-format-test-v2.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m4-commerce-order-payment-expand
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Sync dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Require one canonical commerce implementation
+        run: |
+          test ! -d backend/app/api/v1/module_commerce/order_payment
+          test ! -f backend/tests/test_commerce_order_payment_expand.py
+
+      - name: Apply repository Ruff rules
+        working-directory: backend
+        run: |
+          uv run ruff check --fix \
+            app/api/v1/module_commerce \
+            app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
+            tests/test_commerce_order_payment.py \
+            tests/mysql/verify_commerce_order_payment_expand.py
+          uv run ruff format \
+            app/api/v1/module_commerce \
+            app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
+            tests/test_commerce_order_payment.py \
+            tests/mysql/verify_commerce_order_payment_expand.py
+
+      - name: Verify canonical commerce service
+        working-directory: backend
+        run: |
+          uv run python -m compileall -q \
+            app/api/v1/module_commerce \
+            app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
+            tests/test_commerce_order_payment.py \
+            tests/mysql/verify_commerce_order_payment_expand.py
+          uv run ruff check --no-fix \
+            app/api/v1/module_commerce \
+            app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
+            tests/test_commerce_order_payment.py \
+            tests/mysql/verify_commerce_order_payment_expand.py
+          uv run ruff format --check \
+            app/api/v1/module_commerce \
+            app/alembic/versions/20260903_02_commerce_order_payment_expand.py \
+            tests/test_commerce_order_payment.py \
+            tests/mysql/verify_commerce_order_payment_expand.py
+          uv run pytest -q tests/test_commerce_order_payment.py
+
+      - name: Commit verified canonical implementation
+        run: |
+          rm -f .github/workflows/temporary-m4-format-test-v2.yml
+          rm -f .github/workflows/temporary-m4-consolidate.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix(commerce): consolidate and format canonical order payment module"
+          git push origin HEAD:feature/m4-commerce-order-payment-expand
