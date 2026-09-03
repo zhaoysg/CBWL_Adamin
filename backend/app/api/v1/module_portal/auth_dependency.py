@@ -104,9 +104,7 @@ async def _validate_portal_access_token(
         )
 
     redis_crud = RedisCURD(redis)
-    current = await redis_crud.get(
-        f"{RedisInitKeyConfig.ACCESS_TOKEN.key}:{payload.sub}"
-    )
+    current = await redis_crud.get(f"{RedisInitKeyConfig.ACCESS_TOKEN.key}:{payload.sub}")
     if isinstance(current, bytes):
         current = current.decode("utf-8")
     if not isinstance(current, str) or not hmac.compare_digest(
@@ -119,9 +117,7 @@ async def _validate_portal_access_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 
-    raw = await redis_crud.get(
-        f"{RedisInitKeyConfig.USER_SESSION.key}:{payload.sub}"
-    )
+    raw = await redis_crud.get(f"{RedisInitKeyConfig.USER_SESSION.key}:{payload.sub}")
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
     if not isinstance(raw, str):
@@ -144,10 +140,7 @@ async def _validate_portal_access_token(
             code=RET.UNAUTHORIZED.code,
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
-    if (
-        str(session.get("login_type") or "")
-        not in portal_auth_settings.allowed_login_types
-    ):
+    if str(session.get("login_type") or "") not in portal_auth_settings.allowed_login_types:
         raise CustomException(
             msg="客户端会话类型不匹配",
             code=RET.UNAUTHORIZED.code,
@@ -156,9 +149,7 @@ async def _validate_portal_access_token(
 
     actor = _session_actor(session)
     mode = portal_auth_settings.IDENTITY_MODE
-    if (mode == "legacy" and actor != "legacy") or (
-        mode == "customer" and actor != "customer"
-    ):
+    if (mode == "legacy" and actor != "legacy") or (mode == "customer" and actor != "customer"):
         raise CustomException(
             msg="客户身份模式不匹配",
             code=RET.UNAUTHORIZED.code,

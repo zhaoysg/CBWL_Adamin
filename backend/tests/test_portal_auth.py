@@ -92,9 +92,7 @@ def test_portal_auth_login_refresh_logout_flow(
     assert (
         test_client.get(
             "/portal/home",
-            headers={
-                "Authorization": f"Bearer {refresh_data['access_token']}"
-            },
+            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
         ).status_code
         == 200
     )
@@ -114,9 +112,7 @@ def test_portal_auth_login_refresh_logout_flow(
     assert (
         test_client.get(
             "/portal/home",
-            headers={
-                "Authorization": f"Bearer {refresh_data['access_token']}"
-            },
+            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
         ).status_code
         == 401
     )
@@ -140,9 +136,7 @@ def test_portal_auth_rejects_superuser_login(
     response = _portal_login(test_client, "admin", "admin123")
     assert response.status_code == 403
     assert "管理员账号" in response.json()["msg"]
-    assert not test_client.cookies.get(
-        portal_auth_settings.REFRESH_COOKIE_NAME
-    )
+    assert not test_client.cookies.get(portal_auth_settings.REFRESH_COOKIE_NAME)
 
 
 def test_portal_rejects_administration_session(

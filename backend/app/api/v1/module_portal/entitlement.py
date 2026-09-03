@@ -56,9 +56,7 @@ async def _load_customer_entitlement_context(
     return EntitlementContext(
         user_id=legacy_user_id,
         customer_id=customer_id,
-        active_plan_ids=frozenset(
-            item.plan_id for item in subscriptions
-        ),
+        active_plan_ids=frozenset(item.plan_id for item in subscriptions),
         subscriptions=subscriptions,
     )
 
@@ -70,8 +68,7 @@ def _raise_consistency_error(
     customer_ids: tuple[int, ...],
 ) -> None:
     logger.error(
-        "Portal 会员权益双读不一致: legacy_user_id={} customer_id={} "
-        "legacy_subscription_ids={} customer_subscription_ids={}",
+        "Portal 会员权益双读不一致: legacy_user_id={} customer_id={} legacy_subscription_ids={} customer_subscription_ids={}",
         principal.legacy_user_id,
         principal.customer_id,
         legacy_ids,

@@ -77,14 +77,8 @@ class DatabasePortalService:
         member = await self._member_summary(context)
         contents = await self._published_contents(limit=100)
         feed = [self._feed_item(item, context) for item in contents]
-        pinned = [
-            self._pinned_item(item)
-            for item in contents
-            if item.is_pinned
-        ][:20]
-        categories = list(
-            dict.fromkeys(item.category for item in feed)
-        )[:30]
+        pinned = [self._pinned_item(item) for item in contents if item.is_pinned][:20]
+        categories = list(dict.fromkeys(item.category for item in feed))[:30]
 
         return HomeResponse(
             brand_name="财不外露",
@@ -192,10 +186,7 @@ class DatabasePortalService:
                     price=item.price,
                     original_price=None,
                     benefits=list(item.benefits or []),
-                    recommended=(
-                        highest_rank is not None
-                        and item.rank == highest_rank
-                    ),
+                    recommended=(highest_rank is not None and item.rank == highest_rank),
                 )
                 for item in plans
             ],
@@ -264,17 +255,9 @@ class DatabasePortalService:
         content: ContentModel,
         decision: EntitlementDecision,
     ) -> ContentDetailResponse:
-        unlock_action, unlock_message = self._content_unlock_prompt(
-            decision.failure
-        )
-        reading_source = (
-            content.body
-            if decision.can_access
-            else content.summary or ""
-        )
-        body_text = html.unescape(
-            _TAG_RE.sub(" ", reading_source)
-        )
+        unlock_action, unlock_message = self._content_unlock_prompt(decision.failure)
+        reading_source = content.body if decision.can_access else content.summary or ""
+        body_text = html.unescape(_TAG_RE.sub(" ", reading_source))
         reading_minutes = max(
             1,
             min(1440, math.ceil(len(body_text.strip()) / 400)),
@@ -412,19 +395,13 @@ class DatabasePortalService:
         return MemberSummary(
             id=member_id,
             nickname=nickname,
-            level_name=(
-                best.plan.plan_name if best else "注册用户"
-            ),
-            expire_date=(
-                latest_expiry.date() if latest_expiry else None
-            ),
+            level_name=(best.plan.plan_name if best else "注册用户"),
+            expire_date=(latest_expiry.date() if latest_expiry else None),
             member_no=member_no,
             joined_days=joined_days,
             slogan="独立思考，持续学习，控制风险",
             is_member=bool(ranked),
-            active_plan_codes=sorted(
-                {item.plan.plan_code for item in ranked}
-            ),
+            active_plan_codes=sorted({item.plan.plan_code for item in ranked}),
         )
 
     def _active_benefits(

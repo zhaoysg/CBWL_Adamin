@@ -81,9 +81,7 @@ async def load_entitlement_context(
     subscriptions = tuple(result.scalars().unique().all())
     return EntitlementContext(
         user_id=user_id,
-        active_plan_ids=frozenset(
-            item.plan_id for item in subscriptions
-        ),
+        active_plan_ids=frozenset(item.plan_id for item in subscriptions),
         subscriptions=subscriptions,
     )
 
@@ -127,9 +125,7 @@ async def count_active_members(
 ) -> int:
     current = as_utc(now or utc_now())
     value = await db.scalar(
-        select(
-            func.count(func.distinct(MemberSubscriptionModel.user_id))
-        ).where(
+        select(func.count(func.distinct(MemberSubscriptionModel.user_id))).where(
             MemberSubscriptionModel.status == 0,
             MemberSubscriptionModel.starts_at <= current,
             MemberSubscriptionModel.expires_at > current,

@@ -50,16 +50,11 @@ def _context(
     user_id: int | None = 11,
     customer_id: int | None = None,
 ) -> EntitlementContext:
-    subscriptions = tuple(
-        SimpleNamespace(id=item, plan_id=item + 100)
-        for item in subscription_ids
-    )
+    subscriptions = tuple(SimpleNamespace(id=item, plan_id=item + 100) for item in subscription_ids)
     return EntitlementContext(
         user_id=user_id,
         customer_id=customer_id,
-        active_plan_ids=frozenset(
-            item.plan_id for item in subscriptions
-        ),
+        active_plan_ids=frozenset(item.plan_id for item in subscriptions),
         subscriptions=subscriptions,
     )
 
