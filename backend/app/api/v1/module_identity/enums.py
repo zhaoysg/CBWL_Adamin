@@ -7,7 +7,7 @@ class IdentityRealm(StrEnum):
 
 
 class IdentityProvider(StrEnum):
-    PASSWORD = "password"
+    PASSWORD = "password"  # nosec B105 - provider name, not a credential
     MOBILE_OTP = "mobile_otp"
     EMAIL_OTP = "email_otp"
     WECHAT = "wechat"
