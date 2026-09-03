@@ -1,0 +1,199 @@
+name: 财不外露 M3 客户权益双读 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m3-customer-entitlement-dual-read
+    paths:
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/config/production_guard.py"
+      - "backend/app/api/v1/module_membership/entitlement.py"
+      - "backend/app/api/v1/module_portal/auth_dependency.py"
+      - "backend/app/api/v1/module_portal/controller.py"
+      - "backend/app/api/v1/module_portal/database_service.py"
+      - "backend/app/api/v1/module_portal/entitlement.py"
+      - "backend/app/api/v1/module_portal/principal.py"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_entitlement_transition.py"
+      - "backend/tests/mysql/verify_portal_entitlement_dual_read.py"
+      - ".github/workflows/caibuwailu-m3-customer-entitlement-dual-read-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/config/portal_auth.py"
+      - "backend/app/config/production_guard.py"
+      - "backend/app/api/v1/module_membership/entitlement.py"
+      - "backend/app/api/v1/module_portal/auth_dependency.py"
+      - "backend/app/api/v1/module_portal/controller.py"
+      - "backend/app/api/v1/module_portal/database_service.py"
+      - "backend/app/api/v1/module_portal/entitlement.py"
+      - "backend/app/api/v1/module_portal/principal.py"
+      - "backend/tests/test_portal_auth.py"
+      - "backend/tests/test_portal_entitlement_transition.py"
+      - "backend/tests/mysql/verify_portal_entitlement_dual_read.py"
+      - ".github/workflows/caibuwailu-m3-customer-entitlement-dual-read-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m3-customer-entitlement-dual-read-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  entitlement-quality:
+    name: Principal, rollout modes and entitlement consistency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile changed files
+        run: >-
+          uv run python -m compileall -q
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/controller.py
+          app/api/v1/module_portal/database_service.py
+          app/api/v1/module_portal/entitlement.py
+          app/api/v1/module_portal/principal.py
+          tests/test_portal_auth.py
+          tests/test_portal_entitlement_transition.py
+          tests/mysql/verify_portal_entitlement_dual_read.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/controller.py
+          app/api/v1/module_portal/database_service.py
+          app/api/v1/module_portal/entitlement.py
+          app/api/v1/module_portal/principal.py
+          tests/test_portal_auth.py
+          tests/test_portal_entitlement_transition.py
+          tests/mysql/verify_portal_entitlement_dual_read.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/config/portal_auth.py
+          app/config/production_guard.py
+          app/api/v1/module_membership/entitlement.py
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/controller.py
+          app/api/v1/module_portal/database_service.py
+          app/api/v1/module_portal/entitlement.py
+          app/api/v1/module_portal/principal.py
+          tests/test_portal_auth.py
+          tests/test_portal_entitlement_transition.py
+          tests/mysql/verify_portal_entitlement_dual_read.py
+
+      - name: Security scan Portal entitlement boundary
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_portal/auth_dependency.py
+          app/api/v1/module_portal/entitlement.py
+          app/api/v1/module_portal/principal.py
+
+      - name: Run rollout and entitlement contracts
+        run: >-
+          uv run pytest -q
+          tests/test_portal_auth.py
+          tests/test_portal_customer_auth_dual.py
+          tests/test_portal_entitlement_transition.py
+          tests/test_entitlement.py
+
+  mysql-entitlement:
+    name: MySQL 8.4 legacy, dual mismatch and customer-only reads
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+      PORTAL_IDENTITY_MODE: dual
+      PORTAL_ENTITLEMENT_MODE: dual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user "
+                      "(id INT PRIMARY KEY) ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through customer membership head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify entitlement modes on real MySQL
+        run: >-
+          uv run python -m
+          tests.mysql.verify_portal_entitlement_dual_read
