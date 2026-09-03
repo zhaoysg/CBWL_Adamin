@@ -120,7 +120,7 @@ jobs:
           tests/test_portal_auth.py
           tests/test_portal_customer_auth_dual.py
           tests/test_portal_entitlement_transition.py
-          tests/test_entitlement.py
+          tests/test_portal_entitlement.py
 
   mysql-entitlement:
     name: MySQL 8.4 legacy, dual mismatch and customer-only reads
