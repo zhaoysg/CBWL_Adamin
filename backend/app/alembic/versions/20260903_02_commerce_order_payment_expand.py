@@ -1,4 +1,4 @@
-"""create reversible commerce order and payment ownership
+"""create reversible customer order and payment facts
 
 Revision ID: 20260903_02
 Revises: 20260903_01
@@ -18,7 +18,6 @@ depends_on: str | Sequence[str] | None = None
 _MYSQL_OPTIONS = {
     "mysql_engine": "InnoDB",
     "mysql_charset": "utf8mb4",
-    "mysql_collate": "utf8mb4_bin",
 }
 
 
@@ -50,42 +49,19 @@ def _model_columns() -> list[sa.Column]:
     ]
 
 
-def _base_indexes(table_name: str) -> None:
-    op.create_index(
-        f"ix_{table_name}_is_deleted",
-        table_name,
-        ["is_deleted"],
-        unique=False,
-    )
-    op.create_index(
-        f"ix_{table_name}_created_time",
-        table_name,
-        ["created_time"],
-        unique=False,
-    )
-
-
 def upgrade() -> None:
     op.create_table(
-        "cw_commerce_order",
+        "cw_order",
         *_model_columns(),
         sa.Column("order_no", sa.String(length=40), nullable=False),
-        sa.Column("idempotency_key", sa.String(length=64), nullable=False),
         sa.Column("legacy_user_id", sa.Integer(), nullable=True),
         sa.Column("customer_id", sa.Integer(), nullable=True),
-        sa.Column(
-            "product_type",
-            sa.String(length=32),
-            server_default=sa.text("'membership'"),
-            nullable=False,
-        ),
         sa.Column("plan_id", sa.Integer(), nullable=False),
         sa.Column("plan_code_snapshot", sa.String(length=64), nullable=False),
         sa.Column("plan_name_snapshot", sa.String(length=128), nullable=False),
-        sa.Column("plan_level_no_snapshot", sa.Integer(), nullable=False),
         sa.Column("duration_days_snapshot", sa.Integer(), nullable=False),
-        sa.Column("benefits_snapshot", sa.JSON(), nullable=False),
-        sa.Column("amount", sa.Numeric(precision=12, scale=2), nullable=False),
+        sa.Column("unit_price", sa.Numeric(precision=12, scale=2), nullable=False),
+        sa.Column("total_amount", sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column("currency", sa.String(length=8), nullable=False),
         sa.Column(
             "status",
@@ -93,17 +69,10 @@ def upgrade() -> None:
             server_default=sa.text("'pending'"),
             nullable=False,
         ),
-        sa.Column(
-            "payment_window_seconds",
-            sa.Integer(),
-            server_default=sa.text("900"),
-            nullable=False,
-        ),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("idempotency_key", sa.String(length=128), nullable=False),
+        sa.Column("payment_expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("paid_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancelled_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("refunded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("cancel_reason", sa.String(length=500), nullable=True),
         sa.Column(
             "version_no",
@@ -111,138 +80,100 @@ def upgrade() -> None:
             server_default=sa.text("1"),
             nullable=False,
         ),
-        sa.Column("description", sa.Text(), nullable=True),
         sa.CheckConstraint(
             "legacy_user_id IS NOT NULL OR customer_id IS NOT NULL",
-            name="ck_cw_commerce_order_owner_present",
+            name="ck_cw_order_owner",
         ),
         sa.CheckConstraint(
-            "product_type = 'membership'",
-            name="ck_cw_commerce_order_product_type",
+            "status IN ('pending', 'paid', 'cancelled', 'expired', 'refunded')",
+            name="ck_cw_order_status",
         ),
-        sa.CheckConstraint(
-            "status IN ('pending', 'paid', 'cancelled', 'closed', 'refunded')",
-            name="ck_cw_commerce_order_status",
-        ),
-        sa.CheckConstraint(
-            "(status <> 'paid' OR paid_at IS NOT NULL) "
-            "AND (status <> 'cancelled' OR cancelled_at IS NOT NULL) "
-            "AND (status <> 'closed' OR closed_at IS NOT NULL) "
-            "AND (status <> 'refunded' OR refunded_at IS NOT NULL)",
-            name="ck_cw_commerce_order_state_shape",
-        ),
-        sa.CheckConstraint(
-            "expires_at > created_time",
-            name="ck_cw_commerce_order_expiry",
-        ),
-        sa.CheckConstraint(
-            "length(idempotency_key) = 64",
-            name="ck_cw_commerce_order_idempotency_length",
-        ),
-        sa.CheckConstraint("amount >= 0", name="ck_cw_commerce_order_amount"),
-        sa.CheckConstraint(
-            "payment_window_seconds >= 60 AND payment_window_seconds <= 86400",
-            name="ck_cw_commerce_order_payment_window",
-        ),
-        sa.CheckConstraint(
-            "plan_level_no_snapshot >= 1 AND plan_level_no_snapshot <= 100",
-            name="ck_cw_commerce_order_plan_level",
-        ),
+        sa.CheckConstraint("unit_price >= 0", name="ck_cw_order_unit_price"),
+        sa.CheckConstraint("total_amount >= 0", name="ck_cw_order_total_amount"),
         sa.CheckConstraint(
             "duration_days_snapshot > 0",
-            name="ck_cw_commerce_order_duration",
+            name="ck_cw_order_duration",
+        ),
+        sa.CheckConstraint("version_no >= 1", name="ck_cw_order_version"),
+        sa.CheckConstraint(
+            "status NOT IN ('paid', 'refunded') OR paid_at IS NOT NULL",
+            name="ck_cw_order_paid_shape",
         ),
         sa.CheckConstraint(
-            "version_no >= 1",
-            name="ck_cw_commerce_order_version",
+            "status <> 'cancelled' OR cancelled_at IS NOT NULL",
+            name="ck_cw_order_cancelled_shape",
         ),
         sa.ForeignKeyConstraint(
             ["legacy_user_id"],
             ["sys_user.id"],
-            name="fk_cw_commerce_order_legacy_user",
+            name="fk_cw_order_legacy_user",
             ondelete="RESTRICT",
             onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["customer_id"],
             ["cw_customer.id"],
-            name="fk_cw_commerce_order_customer",
+            name="fk_cw_order_customer",
             ondelete="RESTRICT",
             onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["plan_id"],
             ["cw_member_plan.id"],
-            name="fk_cw_commerce_order_plan",
+            name="fk_cw_order_plan",
             ondelete="RESTRICT",
             onupdate="CASCADE",
         ),
-        sa.UniqueConstraint("order_no", name="uq_cw_commerce_order_no"),
+        sa.UniqueConstraint("order_no", name="uq_cw_order_no"),
         sa.UniqueConstraint(
             "idempotency_key",
-            name="uq_cw_commerce_order_idempotency",
+            name="uq_cw_order_idempotency_key",
         ),
-        sa.UniqueConstraint(
-            "id",
-            "order_no",
-            name="uq_cw_commerce_order_id_no",
-        ),
-        comment="财不外露会员订单",
+        comment="财不外露客户订单",
         **_MYSQL_OPTIONS,
     )
-    _base_indexes("cw_commerce_order")
     op.create_index(
-        "ix_cw_commerce_order_customer_status_created",
-        "cw_commerce_order",
-        ["customer_id", "status", "created_time", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_commerce_order_legacy_status_created",
-        "cw_commerce_order",
+        "ix_cw_order_legacy_status_created",
+        "cw_order",
         ["legacy_user_id", "status", "created_time", "id"],
         unique=False,
     )
     op.create_index(
-        "ix_cw_commerce_order_status_expiry",
-        "cw_commerce_order",
-        ["status", "expires_at", "id"],
+        "ix_cw_order_customer_status_created",
+        "cw_order",
+        ["customer_id", "status", "created_time", "id"],
         unique=False,
     )
     op.create_index(
-        "ix_cw_commerce_order_plan_status",
-        "cw_commerce_order",
-        ["plan_id", "status", "id"],
+        "ix_cw_order_status_expiry",
+        "cw_order",
+        ["status", "payment_expires_at", "id"],
         unique=False,
     )
+    op.create_index("ix_cw_order_is_deleted", "cw_order", ["is_deleted"], unique=False)
+    op.create_index("ix_cw_order_created_time", "cw_order", ["created_time"], unique=False)
 
     op.create_table(
         "cw_payment_attempt",
         *_model_columns(),
-        sa.Column("payment_no", sa.String(length=40), nullable=False),
-        sa.Column("idempotency_key", sa.String(length=64), nullable=False),
+        sa.Column("attempt_no", sa.String(length=40), nullable=False),
         sa.Column("order_id", sa.Integer(), nullable=False),
-        sa.Column("order_no", sa.String(length=40), nullable=False),
-        sa.Column("legacy_user_id", sa.Integer(), nullable=True),
-        sa.Column("customer_id", sa.Integer(), nullable=True),
         sa.Column("provider", sa.String(length=32), nullable=False),
-        sa.Column("channel", sa.String(length=32), nullable=False),
-        sa.Column("provider_trade_no", sa.String(length=128), nullable=True),
+        sa.Column("merchant_request_no", sa.String(length=64), nullable=False),
+        sa.Column("provider_transaction_id", sa.String(length=128), nullable=True),
+        sa.Column("idempotency_key", sa.String(length=128), nullable=False),
         sa.Column("amount", sa.Numeric(precision=12, scale=2), nullable=False),
         sa.Column("currency", sa.String(length=8), nullable=False),
         sa.Column(
             "status",
             sa.String(length=32),
-            server_default=sa.text("'pending'"),
+            server_default=sa.text("'created'"),
             nullable=False,
         ),
-        sa.Column("initiated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("succeeded_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("failed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("closed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("refunded_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("failure_code", sa.String(length=64), nullable=True),
-        sa.Column("failure_message", sa.String(length=255), nullable=True),
+        sa.Column("failure_code", sa.String(length=128), nullable=True),
         sa.Column(
             "version_no",
             sa.Integer(),
@@ -250,93 +181,52 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "legacy_user_id IS NOT NULL OR customer_id IS NOT NULL",
-            name="ck_cw_payment_attempt_owner_present",
-        ),
-        sa.CheckConstraint(
             "provider IN ('wechat', 'alipay', 'manual')",
             name="ck_cw_payment_attempt_provider",
         ),
         sa.CheckConstraint(
-            "channel IN ('h5', 'jsapi', 'app', 'admin', 'bank_transfer')",
-            name="ck_cw_payment_attempt_channel",
-        ),
-        sa.CheckConstraint(
-            "status IN ('pending', 'succeeded', 'failed', 'closed', 'refunded')",
+            "status IN ('created', 'processing', 'succeeded', 'failed', 'closed')",
             name="ck_cw_payment_attempt_status",
-        ),
-        sa.CheckConstraint(
-            "(status <> 'succeeded' OR succeeded_at IS NOT NULL) "
-            "AND (status <> 'failed' OR failed_at IS NOT NULL) "
-            "AND (status <> 'closed' OR closed_at IS NOT NULL) "
-            "AND (status <> 'refunded' OR refunded_at IS NOT NULL)",
-            name="ck_cw_payment_attempt_state_shape",
-        ),
-        sa.CheckConstraint(
-            "length(idempotency_key) = 64",
-            name="ck_cw_payment_attempt_idempotency_length",
         ),
         sa.CheckConstraint("amount >= 0", name="ck_cw_payment_attempt_amount"),
         sa.CheckConstraint(
             "version_no >= 1",
             name="ck_cw_payment_attempt_version",
         ),
+        sa.CheckConstraint(
+            "status <> 'succeeded' OR succeeded_at IS NOT NULL",
+            name="ck_cw_payment_attempt_succeeded_shape",
+        ),
         sa.ForeignKeyConstraint(
-            ["order_id", "order_no"],
-            ["cw_commerce_order.id", "cw_commerce_order.order_no"],
-            name="fk_cw_payment_attempt_order_identity",
+            ["order_id"],
+            ["cw_order.id"],
+            name="fk_cw_payment_attempt_order",
             ondelete="RESTRICT",
             onupdate="CASCADE",
         ),
-        sa.ForeignKeyConstraint(
-            ["legacy_user_id"],
-            ["sys_user.id"],
-            name="fk_cw_payment_attempt_legacy_user",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
-        ),
-        sa.ForeignKeyConstraint(
-            ["customer_id"],
-            ["cw_customer.id"],
-            name="fk_cw_payment_attempt_customer",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
-        ),
-        sa.UniqueConstraint("payment_no", name="uq_cw_payment_attempt_no"),
+        sa.UniqueConstraint("attempt_no", name="uq_cw_payment_attempt_no"),
         sa.UniqueConstraint(
+            "order_id",
             "idempotency_key",
-            name="uq_cw_payment_attempt_idempotency",
+            name="uq_cw_payment_attempt_order_idempotency",
         ),
         sa.UniqueConstraint(
             "provider",
-            "provider_trade_no",
-            name="uq_cw_payment_attempt_provider_trade",
+            "merchant_request_no",
+            name="uq_cw_payment_attempt_provider_request",
         ),
         sa.UniqueConstraint(
-            "id",
-            "payment_no",
-            name="uq_cw_payment_attempt_id_no",
+            "provider",
+            "provider_transaction_id",
+            name="uq_cw_payment_attempt_provider_transaction",
         ),
-        comment="财不外露支付尝试",
+        comment="财不外露订单支付尝试",
         **_MYSQL_OPTIONS,
     )
-    _base_indexes("cw_payment_attempt")
     op.create_index(
         "ix_cw_payment_attempt_order_status",
         "cw_payment_attempt",
         ["order_id", "status", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_attempt_customer_status_created",
-        "cw_payment_attempt",
-        ["customer_id", "status", "created_time", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_attempt_legacy_status_created",
-        "cw_payment_attempt",
-        ["legacy_user_id", "status", "created_time", "id"],
         unique=False,
     )
     op.create_index(
@@ -345,65 +235,70 @@ def upgrade() -> None:
         ["provider", "status", "created_time", "id"],
         unique=False,
     )
+    op.create_index(
+        "ix_cw_payment_attempt_is_deleted",
+        "cw_payment_attempt",
+        ["is_deleted"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_cw_payment_attempt_created_time",
+        "cw_payment_attempt",
+        ["created_time"],
+        unique=False,
+    )
 
     op.create_table(
         "cw_payment_event",
         *_model_columns(),
-        sa.Column("payment_id", sa.Integer(), nullable=False),
-        sa.Column("payment_no", sa.String(length=40), nullable=False),
+        sa.Column("order_id", sa.Integer(), nullable=False),
+        sa.Column("payment_attempt_id", sa.Integer(), nullable=False),
         sa.Column("provider", sa.String(length=32), nullable=False),
-        sa.Column("provider_event_id", sa.String(length=191), nullable=False),
-        sa.Column("event_type", sa.String(length=64), nullable=False),
+        sa.Column("provider_event_id", sa.String(length=128), nullable=False),
+        sa.Column("merchant_request_no", sa.String(length=64), nullable=False),
+        sa.Column("provider_transaction_id", sa.String(length=128), nullable=True),
+        sa.Column("event_type", sa.String(length=32), nullable=False),
+        sa.Column("amount", sa.Numeric(precision=12, scale=2), nullable=False),
+        sa.Column("currency", sa.String(length=8), nullable=False),
+        sa.Column("signature_verified", sa.Boolean(), nullable=False),
         sa.Column("payload_digest", sa.String(length=64), nullable=False),
-        sa.Column(
-            "status",
-            sa.String(length=32),
-            server_default=sa.text("'received'"),
-            nullable=False,
-        ),
-        sa.Column("received_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
-        sa.Column("processing_code", sa.String(length=64), nullable=True),
-        sa.Column("processing_message", sa.String(length=255), nullable=True),
-        sa.Column(
-            "version_no",
-            sa.Integer(),
-            server_default=sa.text("1"),
-            nullable=False,
-        ),
+        sa.Column("processing_status", sa.String(length=32), nullable=False),
+        sa.Column("reason_code", sa.String(length=128), nullable=True),
+        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("note", sa.Text(), nullable=True),
         sa.CheckConstraint(
             "provider IN ('wechat', 'alipay', 'manual')",
             name="ck_cw_payment_event_provider",
         ),
         sa.CheckConstraint(
-            "event_type IN ('payment_succeeded', 'payment_failed', 'payment_closed', 'refund_succeeded', 'unknown')",
+            "event_type IN ('payment_succeeded', 'payment_failed', 'payment_closed')",
             name="ck_cw_payment_event_type",
         ),
         sa.CheckConstraint(
-            "status IN ('received', 'processed', 'ignored', 'failed')",
-            name="ck_cw_payment_event_status",
+            "processing_status IN ('accepted', 'ignored', 'rejected')",
+            name="ck_cw_payment_event_processing_status",
+        ),
+        sa.CheckConstraint("amount >= 0", name="ck_cw_payment_event_amount"),
+        sa.CheckConstraint(
+            "CHAR_LENGTH(payload_digest) = 64",
+            name="ck_cw_payment_event_digest",
         ),
         sa.CheckConstraint(
-            "(status = 'received' AND processed_at IS NULL) "
-            "OR (status <> 'received' AND processed_at IS NOT NULL)",
-            name="ck_cw_payment_event_state_shape",
-        ),
-        sa.CheckConstraint(
-            "length(payload_digest) = 64",
-            name="ck_cw_payment_event_digest_length",
-        ),
-        sa.CheckConstraint(
-            "provider_event_id <> ''",
-            name="ck_cw_payment_event_provider_event_id",
-        ),
-        sa.CheckConstraint(
-            "version_no >= 1",
-            name="ck_cw_payment_event_version",
+            "signature_verified = TRUE",
+            name="ck_cw_payment_event_signature_verified",
         ),
         sa.ForeignKeyConstraint(
-            ["payment_id", "payment_no"],
-            ["cw_payment_attempt.id", "cw_payment_attempt.payment_no"],
-            name="fk_cw_payment_event_payment_identity",
+            ["order_id"],
+            ["cw_order.id"],
+            name="fk_cw_payment_event_order",
+            ondelete="RESTRICT",
+            onupdate="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["payment_attempt_id"],
+            ["cw_payment_attempt.id"],
+            name="fk_cw_payment_event_attempt",
             ondelete="RESTRICT",
             onupdate="CASCADE",
         ),
@@ -412,20 +307,37 @@ def upgrade() -> None:
             "provider_event_id",
             name="uq_cw_payment_event_provider_event",
         ),
-        comment="支付提供方事件去重信封",
+        comment="财不外露规范化支付事件",
         **_MYSQL_OPTIONS,
     )
-    _base_indexes("cw_payment_event")
     op.create_index(
-        "ix_cw_payment_event_payment_status",
+        "ix_cw_payment_event_order_received",
         "cw_payment_event",
-        ["payment_id", "status", "id"],
+        ["order_id", "created_time", "id"],
         unique=False,
     )
     op.create_index(
-        "ix_cw_payment_event_provider_received",
+        "ix_cw_payment_event_attempt_received",
         "cw_payment_event",
-        ["provider", "received_at", "id"],
+        ["payment_attempt_id", "created_time", "id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_cw_payment_event_processing",
+        "cw_payment_event",
+        ["processing_status", "processed_at", "id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_cw_payment_event_is_deleted",
+        "cw_payment_event",
+        ["is_deleted"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_cw_payment_event_created_time",
+        "cw_payment_event",
+        ["created_time"],
         unique=False,
     )
 
@@ -433,4 +345,4 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("cw_payment_event")
     op.drop_table("cw_payment_attempt")
-    op.drop_table("cw_commerce_order")
+    op.drop_table("cw_order")
