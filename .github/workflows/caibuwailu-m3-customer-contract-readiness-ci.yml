@@ -1,0 +1,177 @@
+name: 财不外露 M3 客户 Contract Ready CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m3-customer-contract-readiness
+    paths:
+      - "backend/app/api/v1/module_identity/contract/**"
+      - "backend/app/scripts/check_customer_contract_readiness.py"
+      - "backend/tests/test_customer_contract_readiness.py"
+      - "backend/tests/mysql/verify_customer_contract_readiness.py"
+      - ".github/workflows/caibuwailu-m3-customer-contract-readiness-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/api/v1/module_identity/contract/**"
+      - "backend/app/scripts/check_customer_contract_readiness.py"
+      - "backend/tests/test_customer_contract_readiness.py"
+      - "backend/tests/mysql/verify_customer_contract_readiness.py"
+      - ".github/workflows/caibuwailu-m3-customer-contract-readiness-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m3-customer-contract-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  readiness-quality:
+    name: Read-only report, private output and fail-closed command
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Compile readiness files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_identity/contract
+          app/scripts/check_customer_contract_readiness.py
+          tests/test_customer_contract_readiness.py
+          tests/mysql/verify_customer_contract_readiness.py
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_identity/contract
+          app/scripts/check_customer_contract_readiness.py
+          tests/test_customer_contract_readiness.py
+          tests/mysql/verify_customer_contract_readiness.py
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_identity/contract
+          app/scripts/check_customer_contract_readiness.py
+          tests/test_customer_contract_readiness.py
+          tests/mysql/verify_customer_contract_readiness.py
+      - name: Security scan readiness command
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_identity/contract
+          app/scripts/check_customer_contract_readiness.py
+      - name: Run readiness contracts
+        run: uv run pytest -q tests/test_customer_contract_readiness.py
+
+  mysql-readiness:
+    name: MySQL 8.4 readiness and injected blocker verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Create existing system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user ("
+                      "id INT PRIMARY KEY, "
+                      "is_deleted BOOL NOT NULL DEFAULT FALSE"
+                      ") ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+      - name: Upgrade through customer membership head
+        run: uv run alembic -c alembic.ini upgrade head
+      - name: Verify readiness and injected blockers
+        run: >-
+          uv run python -m
+          tests.mysql.verify_customer_contract_readiness
+      - name: Verify command ready exit and private report
+        run: |
+          uv run python -m app.scripts.check_customer_contract_readiness \
+            --require-ready \
+            --report-json /tmp/customer-contract-ready.json
+          test "$(stat -c '%a' /tmp/customer-contract-ready.json)" = "600"
+          uv run python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('/tmp/customer-contract-ready.json').read_text())
+          assert report['ready'] is True
+          assert report['checks']
+          PY
+      - name: Verify command returns 2 for a blocking condition
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "UPDATE cw_member_subscription "
+                      "SET customer_id = NULL WHERE id = 301"
+                  )
+              )
+          engine.dispose()
+          PY
+          set +e
+          uv run python -m app.scripts.check_customer_contract_readiness \
+            --require-ready \
+            --report-json /tmp/customer-contract-blocked.json
+          status=$?
+          set -e
+          test "$status" -eq 2
+          test "$(stat -c '%a' /tmp/customer-contract-blocked.json)" = "600"
