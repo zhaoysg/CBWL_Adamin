@@ -75,6 +75,30 @@ jobs:
       - name: Run identity contracts
         run: uv run pytest -q tests/test_identity_boundary.py
 
+      - name: Verify MySQL-safe realm foreign-key metadata
+        run: |
+          uv run python - <<'PY'
+          from app.api.v1.module_identity.model import (
+              AdminAccountModel,
+              AuthIdentityModel,
+              CustomerModel,
+          )
+
+          expected = {
+              AuthIdentityModel: "fk_auth_identity_subject_realm",
+              AdminAccountModel: "fk_sys_admin_account_subject_realm",
+              CustomerModel: "fk_cw_customer_subject_realm",
+          }
+          for model, constraint_name in expected.items():
+              constraint = next(
+                  item
+                  for item in model.__table__.foreign_key_constraints
+                  if item.name == constraint_name
+              )
+              assert constraint.ondelete is None
+              assert constraint.onupdate is None
+          PY
+
   mysql-identity-roundtrip:
     name: MySQL 8.4 identity upgrade, downgrade and re-upgrade
     runs-on: ubuntu-latest
