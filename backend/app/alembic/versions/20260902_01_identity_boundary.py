@@ -151,8 +151,7 @@ def upgrade() -> None:
             name="ck_auth_identity_realm",
         ),
         sa.CheckConstraint(
-            "provider IN "
-            "('password', 'mobile_otp', 'email_otp', 'wechat', 'external')",
+            "provider IN ('password', 'mobile_otp', 'email_otp', 'wechat', 'external')",
             name="ck_auth_identity_provider",
         ),
         sa.CheckConstraint(
@@ -160,8 +159,7 @@ def upgrade() -> None:
             name="ck_auth_identity_status",
         ),
         sa.CheckConstraint(
-            "(provider = 'password' AND credential_hash IS NOT NULL) OR "
-            "(provider <> 'password' AND credential_hash IS NULL)",
+            "(provider = 'password' AND credential_hash IS NOT NULL) OR (provider <> 'password' AND credential_hash IS NULL)",
             name="ck_auth_identity_credential_shape",
         ),
         sa.CheckConstraint("version_no >= 1", name="ck_auth_identity_version"),

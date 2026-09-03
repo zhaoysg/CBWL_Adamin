@@ -49,14 +49,10 @@ class IdentityService:
     ) -> str | None:
         if provider is IdentityProvider.PASSWORD:
             if not credential_hash or len(credential_hash) < 20:
-                raise IdentityProvisionError(
-                    "password identity requires a secure credential hash"
-                )
+                raise IdentityProvisionError("password identity requires a secure credential hash")
             return credential_hash
         if credential_hash is not None:
-            raise IdentityProvisionError(
-                "non-password identity cannot store a password hash"
-            )
+            raise IdentityProvisionError("non-password identity cannot store a password hash")
         return None
 
     @classmethod

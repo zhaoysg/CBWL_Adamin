@@ -84,8 +84,7 @@ class AuthIdentityModel(ModelMixin):
             name="ck_auth_identity_realm",
         ),
         CheckConstraint(
-            "provider IN "
-            "('password', 'mobile_otp', 'email_otp', 'wechat', 'external')",
+            "provider IN ('password', 'mobile_otp', 'email_otp', 'wechat', 'external')",
             name="ck_auth_identity_provider",
         ),
         CheckConstraint(
@@ -93,8 +92,7 @@ class AuthIdentityModel(ModelMixin):
             name="ck_auth_identity_status",
         ),
         CheckConstraint(
-            "(provider = 'password' AND credential_hash IS NOT NULL) OR "
-            "(provider <> 'password' AND credential_hash IS NULL)",
+            "(provider = 'password' AND credential_hash IS NOT NULL) OR (provider <> 'password' AND credential_hash IS NULL)",
             name="ck_auth_identity_credential_shape",
         ),
         CheckConstraint("version_no >= 1", name="ck_auth_identity_version"),

@@ -21,23 +21,13 @@ from app.core.base_model import UserMixin
 
 
 def _foreign_key_targets(model) -> set[str]:
-    return {
-        element.target_fullname
-        for constraint in model.__table__.foreign_key_constraints
-        for element in constraint.elements
-    }
+    return {element.target_fullname for constraint in model.__table__.foreign_key_constraints for element in constraint.elements}
 
 
 def test_identity_identifier_normalization() -> None:
     assert normalize_identifier(IdentityProvider.PASSWORD, "  Demo_User  ") == "demo_user"
-    assert (
-        normalize_identifier(IdentityProvider.EMAIL_OTP, "Ａlice@Example.COM")
-        == "alice@example.com"
-    )
-    assert (
-        normalize_identifier(IdentityProvider.MOBILE_OTP, "+86 138-0013-8000")
-        == "+8613800138000"
-    )
+    assert normalize_identifier(IdentityProvider.EMAIL_OTP, "Ａlice@Example.COM") == "alice@example.com"
+    assert normalize_identifier(IdentityProvider.MOBILE_OTP, "+86 138-0013-8000") == "+8613800138000"
     assert normalize_identifier(IdentityProvider.WECHAT, " WxOpenIdAbC ") == "WxOpenIdAbC"
 
 
@@ -75,11 +65,7 @@ def test_admin_bridge_is_the_only_identity_table_linked_to_sys_user() -> None:
 
 
 def test_identity_uniqueness_is_scoped_by_realm_and_provider() -> None:
-    unique_columns = {
-        tuple(column.name for column in constraint.columns)
-        for constraint in AuthIdentityModel.__table__.constraints
-        if isinstance(constraint, UniqueConstraint)
-    }
+    unique_columns = {tuple(column.name for column in constraint.columns) for constraint in AuthIdentityModel.__table__.constraints if isinstance(constraint, UniqueConstraint)}
     assert ("realm", "provider", "identifier_normalized") in unique_columns
 
 
@@ -160,9 +146,7 @@ async def test_non_password_identity_rejects_password_hash() -> None:
 
 
 def test_identity_migration_is_additive_reversible_and_model_aligned() -> None:
-    migration = Path(
-        "app/alembic/versions/20260902_01_identity_boundary.py"
-    ).read_text(encoding="utf-8")
+    migration = Path("app/alembic/versions/20260902_01_identity_boundary.py").read_text(encoding="utf-8")
 
     assert 'revision: str = "20260902_01"' in migration
     assert 'down_revision: str | None = "20260823_01"' in migration
