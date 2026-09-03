@@ -28,17 +28,12 @@ if TYPE_CHECKING:
 _TABLE_OPTIONS = {
     "mysql_engine": "InnoDB",
     "mysql_charset": "utf8mb4",
+    "mysql_collate": "utf8mb4_bin",
 }
 
 
 class CommerceOrderModel(ModelMixin):
-    """Immutable commercial snapshot plus reversible customer ownership.
-
-    ``legacy_user_id`` and ``customer_id`` intentionally coexist during the
-    customer migration window. At least one owner is required; customer-first
-    callers persist both IDs so the order can be audited and rolled back without
-    rewriting historical financial facts.
-    """
+    """Immutable commercial snapshot plus reversible customer ownership."""
 
     __tablename__ = "cw_order"
     __table_args__ = (
@@ -102,8 +97,6 @@ class CommerceOrderModel(ModelMixin):
         ForeignKey(
             "sys_user.id",
             name="fk_cw_order_legacy_user",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=True,
         comment="迁移期原系统用户ID",
@@ -113,8 +106,6 @@ class CommerceOrderModel(ModelMixin):
         ForeignKey(
             "cw_customer.id",
             name="fk_cw_order_customer",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=True,
         comment="H5客户ID",
@@ -124,8 +115,6 @@ class CommerceOrderModel(ModelMixin):
         ForeignKey(
             "cw_member_plan.id",
             name="fk_cw_order_plan",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=False,
         comment="下单时会员套餐ID",
@@ -260,6 +249,10 @@ class PaymentAttemptModel(ModelMixin):
             "status <> 'succeeded' OR succeeded_at IS NOT NULL",
             name="ck_cw_payment_attempt_succeeded_shape",
         ),
+        CheckConstraint(
+            "status NOT IN ('failed', 'closed') OR failed_at IS NOT NULL",
+            name="ck_cw_payment_attempt_failed_shape",
+        ),
         Index(
             "ix_cw_payment_attempt_order_status",
             "order_id",
@@ -288,8 +281,6 @@ class PaymentAttemptModel(ModelMixin):
         ForeignKey(
             "cw_order.id",
             name="fk_cw_payment_attempt_order",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=False,
         comment="订单ID",
@@ -370,11 +361,7 @@ class PaymentAttemptModel(ModelMixin):
 
 
 class PaymentEventModel(ModelMixin):
-    """Deduplicated, verified and normalized payment callback fact.
-
-    Raw callback bodies, signatures, tokens and personal data are deliberately
-    absent. Only the adapter-computed digest and normalized fields are stored.
-    """
+    """Deduplicated, verified and normalized payment callback fact."""
 
     __tablename__ = "cw_payment_event"
     __table_args__ = (
@@ -399,6 +386,10 @@ class PaymentEventModel(ModelMixin):
         CheckConstraint(
             "CHAR_LENGTH(payload_digest) = 64",
             name="ck_cw_payment_event_digest",
+        ),
+        CheckConstraint(
+            "signature_verified = TRUE",
+            name="ck_cw_payment_event_signature_verified",
         ),
         Index(
             "ix_cw_payment_event_order_received",
@@ -428,8 +419,6 @@ class PaymentEventModel(ModelMixin):
         ForeignKey(
             "cw_order.id",
             name="fk_cw_payment_event_order",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=False,
         comment="订单ID",
@@ -439,8 +428,6 @@ class PaymentEventModel(ModelMixin):
         ForeignKey(
             "cw_payment_attempt.id",
             name="fk_cw_payment_event_attempt",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         nullable=False,
         comment="支付尝试ID",
