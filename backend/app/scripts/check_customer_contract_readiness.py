@@ -14,12 +14,7 @@ from app.core.database import async_db_session
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Check whether customer identity and membership ownership are "
-            "safe to enter the Contract migration phase."
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Check whether customer identity and membership ownership are safe to enter the Contract migration phase."))
     parser.add_argument(
         "--require-ready",
         action="store_true",
@@ -86,11 +81,7 @@ async def _run(args: argparse.Namespace) -> int:
                 "ready": report.ready,
                 "blocking_codes": report.blocking_codes,
                 "summary": report.summary,
-                "report_json": (
-                    str(args.report_json)
-                    if args.report_json is not None
-                    else None
-                ),
+                "report_json": (str(args.report_json) if args.report_json is not None else None),
             },
             ensure_ascii=False,
             sort_keys=True,

@@ -112,34 +112,22 @@ async def main() -> None:
         "claim_required_maps": 0,
     }
 
-    await _execute(
-        "UPDATE cw_member_subscription SET customer_id = NULL WHERE id = 301"
-    )
+    await _execute("UPDATE cw_member_subscription SET customer_id = NULL WHERE id = 301")
     missing = await _report()
     assert missing.ready is False
     assert _counts(missing)["subscription_customer_missing"] == 1
 
-    await _execute(
-        "UPDATE cw_member_subscription SET customer_id = 501 WHERE id = 301"
-    )
-    await _execute(
-        "UPDATE cw_customer_legacy_map "
-        "SET credential_state = 'claim_required' WHERE id = 601"
-    )
+    await _execute("UPDATE cw_member_subscription SET customer_id = 501 WHERE id = 301")
+    await _execute("UPDATE cw_customer_legacy_map SET credential_state = 'claim_required' WHERE id = 601")
     claim = await _report()
     assert claim.ready is False
     assert _counts(claim)["claim_required_remaining"] == 1
 
-    await _execute(
-        "UPDATE cw_customer_legacy_map "
-        "SET credential_state = 'migrated' WHERE id = 601"
-    )
+    await _execute("UPDATE cw_customer_legacy_map SET credential_state = 'migrated' WHERE id = 601")
     await _execute("UPDATE auth_identity SET is_deleted = 1 WHERE id = 402")
     missing_identity = await _report()
     assert missing_identity.ready is False
-    assert (
-        _counts(missing_identity)["migrated_password_identity_invalid"] == 1
-    )
+    assert _counts(missing_identity)["migrated_password_identity_invalid"] == 1
 
     await _execute("UPDATE auth_identity SET is_deleted = 0 WHERE id = 402")
     await _execute("UPDATE cw_customer SET status = 'disabled' WHERE id = 501")

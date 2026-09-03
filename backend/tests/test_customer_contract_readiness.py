@@ -49,12 +49,8 @@ async def test_readiness_service_rejects_unbounded_samples() -> None:
 
 
 def test_readiness_command_is_read_only_and_fail_closed() -> None:
-    command = Path(
-        "app/scripts/check_customer_contract_readiness.py"
-    ).read_text(encoding="utf-8")
-    service = Path(
-        "app/api/v1/module_identity/contract/service.py"
-    ).read_text(encoding="utf-8")
+    command = Path("app/scripts/check_customer_contract_readiness.py").read_text(encoding="utf-8")
+    service = Path("app/api/v1/module_identity/contract/service.py").read_text(encoding="utf-8")
 
     assert '"--require-ready"' in command
     assert '"--report-json"' in command

@@ -30,12 +30,7 @@ from .schema import (
 
 
 async def _count_query(db: AsyncSession, query) -> int:
-    return int(
-        await db.scalar(
-            select(func.count()).select_from(query.order_by(None).subquery())
-        )
-        or 0
-    )
+    return int(await db.scalar(select(func.count()).select_from(query.order_by(None).subquery())) or 0)
 
 
 async def _sample_query(
@@ -76,15 +71,9 @@ class CustomerContractReadinessService:
         if sample_limit <= 0 or sample_limit > 100:
             raise ValueError("sample_limit must be between 1 and 100")
 
-        subscriptions = select(MemberSubscriptionModel.id).where(
-            MemberSubscriptionModel.is_deleted.is_(False)
-        )
-        mapped_subscriptions = subscriptions.where(
-            MemberSubscriptionModel.customer_id.is_not(None)
-        )
-        active_maps = select(LegacyCustomerMapModel.id).where(
-            LegacyCustomerMapModel.is_deleted.is_(False)
-        )
+        subscriptions = select(MemberSubscriptionModel.id).where(MemberSubscriptionModel.is_deleted.is_(False))
+        mapped_subscriptions = subscriptions.where(MemberSubscriptionModel.customer_id.is_not(None))
+        active_maps = select(LegacyCustomerMapModel.id).where(LegacyCustomerMapModel.is_deleted.is_(False))
 
         summary = {
             "subscriptions": await _count_query(db, subscriptions),
@@ -95,30 +84,21 @@ class CustomerContractReadinessService:
             "active_maps": await _count_query(db, active_maps),
             "migrated_maps": await _count_query(
                 db,
-                active_maps.where(
-                    LegacyCustomerMapModel.credential_state
-                    == LegacyCredentialState.MIGRATED
-                ),
+                active_maps.where(LegacyCustomerMapModel.credential_state == LegacyCredentialState.MIGRATED),
             ),
             "claim_required_maps": await _count_query(
                 db,
-                active_maps.where(
-                    LegacyCustomerMapModel.credential_state
-                    == LegacyCredentialState.CLAIM_REQUIRED
-                ),
+                active_maps.where(LegacyCustomerMapModel.credential_state == LegacyCredentialState.CLAIM_REQUIRED),
             ),
         }
 
         exact_map_join = and_(
-            LegacyCustomerMapModel.legacy_sys_user_id
-            == MemberSubscriptionModel.user_id,
-            LegacyCustomerMapModel.customer_id
-            == MemberSubscriptionModel.customer_id,
+            LegacyCustomerMapModel.legacy_sys_user_id == MemberSubscriptionModel.user_id,
+            LegacyCustomerMapModel.customer_id == MemberSubscriptionModel.customer_id,
             LegacyCustomerMapModel.is_deleted.is_(False),
         )
         legacy_map_join = and_(
-            LegacyCustomerMapModel.legacy_sys_user_id
-            == MemberSubscriptionModel.user_id,
+            LegacyCustomerMapModel.legacy_sys_user_id == MemberSubscriptionModel.user_id,
             LegacyCustomerMapModel.is_deleted.is_(False),
         )
         active_password_count = (
@@ -169,8 +149,7 @@ class CustomerContractReadinessService:
                 .where(
                     MemberSubscriptionModel.is_deleted.is_(False),
                     MemberSubscriptionModel.customer_id.is_not(None),
-                    MemberSubscriptionModel.customer_id
-                    != LegacyCustomerMapModel.customer_id,
+                    MemberSubscriptionModel.customer_id != LegacyCustomerMapModel.customer_id,
                 )
                 .order_by(MemberSubscriptionModel.id),
                 message="会员订阅 customer_id 与迁移映射不一致",
@@ -203,8 +182,7 @@ class CustomerContractReadinessService:
                 query=select(LegacyCustomerMapModel.id)
                 .outerjoin(
                     UserModel,
-                    UserModel.id
-                    == LegacyCustomerMapModel.legacy_sys_user_id,
+                    UserModel.id == LegacyCustomerMapModel.legacy_sys_user_id,
                 )
                 .where(
                     LegacyCustomerMapModel.is_deleted.is_(False),
@@ -223,8 +201,7 @@ class CustomerContractReadinessService:
                 query=select(LegacyCustomerMapModel.id)
                 .where(
                     LegacyCustomerMapModel.is_deleted.is_(False),
-                    LegacyCustomerMapModel.credential_state
-                    == LegacyCredentialState.CLAIM_REQUIRED,
+                    LegacyCustomerMapModel.credential_state == LegacyCredentialState.CLAIM_REQUIRED,
                 )
                 .order_by(LegacyCustomerMapModel.id),
                 message="仍有客户需要完成身份认领或密码重置",
@@ -240,8 +217,7 @@ class CustomerContractReadinessService:
                 )
                 .where(
                     LegacyCustomerMapModel.is_deleted.is_(False),
-                    LegacyCustomerMapModel.credential_state
-                    == LegacyCredentialState.MIGRATED,
+                    LegacyCustomerMapModel.credential_state == LegacyCredentialState.MIGRATED,
                     active_password_count != 1,
                 )
                 .order_by(LegacyCustomerMapModel.id),
@@ -262,8 +238,7 @@ class CustomerContractReadinessService:
                 .join(
                     LegacyCustomerMapModel,
                     and_(
-                        LegacyCustomerMapModel.customer_id
-                        == CustomerModel.id,
+                        LegacyCustomerMapModel.customer_id == CustomerModel.id,
                         LegacyCustomerMapModel.is_deleted.is_(False),
                     ),
                 )
