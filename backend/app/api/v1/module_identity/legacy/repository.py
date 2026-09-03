@@ -71,24 +71,10 @@ async def load_user_for_update(
         )
     ).one_or_none()
     if row is None:
-        raise LegacyCustomerMigrationError(
-            "legacy user does not exist or is deleted"
-        )
+        raise LegacyCustomerMigrationError("legacy user does not exist or is deleted")
 
-    role_ids = (
-        await db.scalars(
-            select(UserRolesModel.role_id)
-            .where(UserRolesModel.user_id == legacy_sys_user_id)
-            .with_for_update()
-        )
-    ).all()
-    position_ids = (
-        await db.scalars(
-            select(UserPositionsModel.position_id)
-            .where(UserPositionsModel.user_id == legacy_sys_user_id)
-            .with_for_update()
-        )
-    ).all()
+    role_ids = (await db.scalars(select(UserRolesModel.role_id).where(UserRolesModel.user_id == legacy_sys_user_id).with_for_update())).all()
+    position_ids = (await db.scalars(select(UserPositionsModel.position_id).where(UserPositionsModel.user_id == legacy_sys_user_id).with_for_update())).all()
     return LegacyUserSnapshot(
         id=row.id,
         username=row.username,
@@ -131,8 +117,7 @@ async def load_mapping_for_update(
     return await db.scalar(
         select(LegacyCustomerMapModel)
         .where(
-            LegacyCustomerMapModel.legacy_sys_user_id
-            == legacy_sys_user_id,
+            LegacyCustomerMapModel.legacy_sys_user_id == legacy_sys_user_id,
             LegacyCustomerMapModel.is_deleted.is_(False),
         )
         .with_for_update()
@@ -148,8 +133,7 @@ async def customer_identifier_exists(
         .where(
             AuthIdentityModel.realm == IdentityRealm.CUSTOMER,
             AuthIdentityModel.provider == IdentityProvider.PASSWORD,
-            AuthIdentityModel.identifier_normalized
-            == normalized_identifier,
+            AuthIdentityModel.identifier_normalized == normalized_identifier,
             AuthIdentityModel.is_deleted.is_(False),
         )
         .with_for_update()
@@ -170,23 +154,15 @@ async def ensure_customer_exists(
         .with_for_update()
     )
     if existing is None:
-        raise LegacyCustomerMigrationConflict(
-            "legacy map references a missing or deleted customer"
-        )
+        raise LegacyCustomerMigrationConflict("legacy map references a missing or deleted customer")
 
 
 def assert_subscription_ownership(
     subscriptions: list[tuple[int, int | None]],
     customer_id: int,
 ) -> None:
-    if any(
-        existing_customer_id is not None
-        and existing_customer_id != customer_id
-        for _, existing_customer_id in subscriptions
-    ):
-        raise LegacyCustomerMigrationConflict(
-            "legacy subscriptions already reference another customer"
-        )
+    if any(existing_customer_id is not None and existing_customer_id != customer_id for _, existing_customer_id in subscriptions):
+        raise LegacyCustomerMigrationConflict("legacy subscriptions already reference another customer")
 
 
 async def backfill_subscriptions(

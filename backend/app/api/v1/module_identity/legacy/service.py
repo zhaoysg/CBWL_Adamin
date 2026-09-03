@@ -48,9 +48,7 @@ def classify_legacy_candidate(
     if already_mapped:
         return LegacyCandidateDisposition.ALREADY_MAPPED, ()
     if identifier_conflict:
-        return LegacyCandidateDisposition.IDENTIFIER_CONFLICT, (
-            "customer_identifier_conflict",
-        )
+        return LegacyCandidateDisposition.IDENTIFIER_CONFLICT, ("customer_identifier_conflict",)
 
     reasons: list[str] = []
     if is_superuser:
@@ -84,24 +82,14 @@ class LegacyCustomerMigrationPlanner:
         subscription_counts = (
             select(
                 MemberSubscriptionModel.user_id.label("legacy_sys_user_id"),
-                func.count(MemberSubscriptionModel.id).label(
-                    "subscription_count"
-                ),
+                func.count(MemberSubscriptionModel.id).label("subscription_count"),
             )
             .where(MemberSubscriptionModel.is_deleted.is_(False))
             .group_by(MemberSubscriptionModel.user_id)
             .subquery()
         )
-        has_roles = exists(
-            select(UserRolesModel.user_id).where(
-                UserRolesModel.user_id == UserModel.id
-            )
-        )
-        has_positions = exists(
-            select(UserPositionsModel.user_id).where(
-                UserPositionsModel.user_id == UserModel.id
-            )
-        )
+        has_roles = exists(select(UserRolesModel.user_id).where(UserRolesModel.user_id == UserModel.id))
+        has_positions = exists(select(UserPositionsModel.user_id).where(UserPositionsModel.user_id == UserModel.id))
         result = await db.execute(
             select(
                 UserModel.id.label("legacy_sys_user_id"),
@@ -137,9 +125,7 @@ class LegacyCustomerMigrationPlanner:
             (
                 await db.scalars(
                     select(LegacyCustomerMapModel.legacy_sys_user_id).where(
-                        LegacyCustomerMapModel.legacy_sys_user_id.in_(
-                            legacy_user_ids
-                        ),
+                        LegacyCustomerMapModel.legacy_sys_user_id.in_(legacy_user_ids),
                         LegacyCustomerMapModel.is_deleted.is_(False),
                     )
                 )
@@ -157,9 +143,7 @@ class LegacyCustomerMigrationPlanner:
                 )
                 valid_normalized_identifiers.add(normalized)
             except InvalidIdentityIdentifier:
-                normalized = legacy_identifier_fallback(
-                    row.legacy_sys_user_id
-                )
+                normalized = legacy_identifier_fallback(row.legacy_sys_user_id)
                 invalid_identifier_ids.add(row.legacy_sys_user_id)
             normalized_by_user[row.legacy_sys_user_id] = normalized
 
@@ -168,16 +152,10 @@ class LegacyCustomerMigrationPlanner:
             conflicting_identifiers = set(
                 (
                     await db.scalars(
-                        select(
-                            AuthIdentityModel.identifier_normalized
-                        ).where(
-                            AuthIdentityModel.realm
-                            == IdentityRealm.CUSTOMER,
-                            AuthIdentityModel.provider
-                            == IdentityProvider.PASSWORD,
-                            AuthIdentityModel.identifier_normalized.in_(
-                                valid_normalized_identifiers
-                            ),
+                        select(AuthIdentityModel.identifier_normalized).where(
+                            AuthIdentityModel.realm == IdentityRealm.CUSTOMER,
+                            AuthIdentityModel.provider == IdentityProvider.PASSWORD,
+                            AuthIdentityModel.identifier_normalized.in_(valid_normalized_identifiers),
                             AuthIdentityModel.is_deleted.is_(False),
                         )
                     )
@@ -190,20 +168,14 @@ class LegacyCustomerMigrationPlanner:
             normalized = normalized_by_user[row.legacy_sys_user_id]
             disposition, reasons = classify_legacy_candidate(
                 already_mapped=row.legacy_sys_user_id in mapped_ids,
-                identifier_conflict=(
-                    normalized in conflicting_identifiers
-                ),
+                identifier_conflict=(normalized in conflicting_identifiers),
                 is_superuser=bool(row.is_superuser),
                 has_department=row.dept_id is not None,
                 has_roles=bool(row.has_roles),
                 has_positions=bool(row.has_positions),
                 user_disabled=row.status != 0,
-                invalid_identifier=(
-                    row.legacy_sys_user_id in invalid_identifier_ids
-                ),
-                credential_hash_usable=is_usable_credential_hash(
-                    row.password
-                ),
+                invalid_identifier=(row.legacy_sys_user_id in invalid_identifier_ids),
+                credential_hash_usable=is_usable_credential_hash(row.password),
             )
             counts[disposition] += 1
             candidates.append(
@@ -220,14 +192,8 @@ class LegacyCustomerMigrationPlanner:
         return LegacyCustomerMigrationPlanSchema(
             total=len(candidates),
             eligible=counts[LegacyCandidateDisposition.ELIGIBLE],
-            claim_required=counts[
-                LegacyCandidateDisposition.CLAIM_REQUIRED
-            ],
-            already_mapped=counts[
-                LegacyCandidateDisposition.ALREADY_MAPPED
-            ],
-            identifier_conflict=counts[
-                LegacyCandidateDisposition.IDENTIFIER_CONFLICT
-            ],
+            claim_required=counts[LegacyCandidateDisposition.CLAIM_REQUIRED],
+            already_mapped=counts[LegacyCandidateDisposition.ALREADY_MAPPED],
+            identifier_conflict=counts[LegacyCandidateDisposition.IDENTIFIER_CONFLICT],
             candidates=candidates,
         )

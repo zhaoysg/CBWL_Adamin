@@ -92,9 +92,7 @@ def test_plan_digest_is_order_independent_but_content_sensitive() -> None:
     digest = migration_selection_digest([second, first])
     assert digest == migration_selection_digest([first, second])
 
-    changed = second.model_copy(
-        update={"reasons": ["credential_reset_required"]}
-    )
+    changed = second.model_copy(update={"reasons": ["credential_reset_required"]})
     assert digest != migration_selection_digest([first, changed])
 
 
@@ -127,12 +125,8 @@ def test_invalid_identifier_fallback_contains_no_legacy_identifier() -> None:
 
 
 def test_migration_executor_keeps_transaction_ownership_with_caller() -> None:
-    migrator = Path(
-        "app/api/v1/module_identity/legacy/migrator.py"
-    ).read_text(encoding="utf-8")
-    repository = Path(
-        "app/api/v1/module_identity/legacy/repository.py"
-    ).read_text(encoding="utf-8")
+    migrator = Path("app/api/v1/module_identity/legacy/migrator.py").read_text(encoding="utf-8")
+    repository = Path("app/api/v1/module_identity/legacy/repository.py").read_text(encoding="utf-8")
 
     assert ".commit(" not in migrator
     assert ".rollback(" not in migrator
@@ -142,9 +136,7 @@ def test_migration_executor_keeps_transaction_ownership_with_caller() -> None:
 
 
 def test_command_is_dry_run_by_default_and_guards_apply() -> None:
-    command = Path("app/scripts/migrate_legacy_customers.py").read_text(
-        encoding="utf-8"
-    )
+    command = Path("app/scripts/migrate_legacy_customers.py").read_text(encoding="utf-8")
 
     assert '"--apply"' in command
     assert '"--plan-digest"' in command

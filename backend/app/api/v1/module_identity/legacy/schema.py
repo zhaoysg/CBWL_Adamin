@@ -21,9 +21,7 @@ class LegacyCustomerMigrationPlanSchema(BaseModel):
     claim_required: int = Field(ge=0)
     already_mapped: int = Field(ge=0)
     identifier_conflict: int = Field(ge=0)
-    candidates: list[LegacyCustomerCandidateSchema] = Field(
-        default_factory=list
-    )
+    candidates: list[LegacyCustomerCandidateSchema] = Field(default_factory=list)
 
 
 class LegacyCustomerMigrationResultSchema(BaseModel):

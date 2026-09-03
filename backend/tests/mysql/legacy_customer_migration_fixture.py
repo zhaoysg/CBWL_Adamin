@@ -21,12 +21,7 @@ async def seed_base_candidates(db: AsyncSession) -> None:
             "'Conflict User', NULL, 0, 0, NULL, 0)"
         )
     )
-    await db.execute(
-        text(
-            "INSERT INTO sys_user_roles (user_id, role_id) "
-            "VALUES (102, 9001)"
-        )
-    )
+    await db.execute(text("INSERT INTO sys_user_roles (user_id, role_id) VALUES (102, 9001)"))
     await db.execute(
         text(
             "INSERT INTO cw_member_plan "

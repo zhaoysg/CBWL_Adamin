@@ -26,12 +26,7 @@ from app.core.database import async_db_session
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Plan or apply the legacy sys_user to cw_customer membership "
-            "migration. The default mode is read-only."
-        )
-    )
+    parser = argparse.ArgumentParser(description=("Plan or apply the legacy sys_user to cw_customer membership migration. The default mode is read-only."))
     parser.add_argument(
         "--apply",
         action="store_true",
@@ -39,18 +34,12 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--plan-digest",
-        help=(
-            "Required with --apply. Must match the digest printed by a "
-            "fresh dry run using the same selection flags."
-        ),
+        help=("Required with --apply. Must match the digest printed by a fresh dry run using the same selection flags."),
     )
     parser.add_argument(
         "--include-claim-required",
         action="store_true",
-        help=(
-            "Also create customer ownership records for candidates that "
-            "must claim new credentials. No password identity is copied."
-        ),
+        help=("Also create customer ownership records for candidates that must claim new credentials. No password identity is copied."),
     )
     parser.add_argument(
         "--legacy-user-id",
@@ -67,10 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--report-json",
         type=Path,
-        help=(
-            "Write a private JSON audit report. Required for --apply; "
-            "created with owner-only permissions."
-        ),
+        help=("Write a private JSON audit report. Required for --apply; created with owner-only permissions."),
     )
     return parser
 
@@ -102,9 +88,7 @@ def _write_private_json(path: Path, payload: dict[str, Any]) -> None:
 
 async def _build_selection(args: argparse.Namespace):
     async with async_db_session() as db:
-        plan = await LegacyCustomerMigrationPlanner.plan_membership_candidates(
-            db
-        )
+        plan = await LegacyCustomerMigrationPlanner.plan_membership_candidates(db)
     candidates = select_migration_candidates(
         plan,
         include_claim_required=args.include_claim_required,
@@ -124,9 +108,7 @@ async def _apply(args: argparse.Namespace) -> int:
     if not candidates:
         raise SystemExit("no migration candidates were selected")
     if not secrets.compare_digest(args.plan_digest, digest):
-        raise SystemExit(
-            "migration plan changed; run a new dry run and use its digest"
-        )
+        raise SystemExit("migration plan changed; run a new dry run and use its digest")
 
     results: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
@@ -134,11 +116,9 @@ async def _apply(args: argparse.Namespace) -> int:
         try:
             async with async_db_session() as db:
                 async with db.begin():
-                    result = (
-                        await LegacyCustomerMigrationExecutor.migrate_one(
-                            db,
-                            candidate.legacy_sys_user_id,
-                        )
+                    result = await LegacyCustomerMigrationExecutor.migrate_one(
+                        db,
+                        candidate.legacy_sys_user_id,
                     )
             results.append(result.model_dump(mode="json"))
         except (
@@ -216,11 +196,7 @@ async def _dry_run(args: argparse.Namespace) -> int:
                 "claim_required": plan.claim_required,
                 "already_mapped": plan.already_mapped,
                 "identifier_conflict": plan.identifier_conflict,
-                "report_json": (
-                    str(args.report_json)
-                    if args.report_json is not None
-                    else None
-                ),
+                "report_json": (str(args.report_json) if args.report_json is not None else None),
             },
             ensure_ascii=False,
             sort_keys=True,
@@ -232,9 +208,7 @@ async def _dry_run(args: argparse.Namespace) -> int:
 async def _run(args: argparse.Namespace) -> int:
     if args.limit is not None and args.limit <= 0:
         raise SystemExit("--limit must be positive")
-    if args.legacy_user_ids and any(
-        user_id <= 0 for user_id in args.legacy_user_ids
-    ):
+    if args.legacy_user_ids and any(user_id <= 0 for user_id in args.legacy_user_ids):
         raise SystemExit("--legacy-user-id must be positive")
     if not args.apply and args.plan_digest:
         raise SystemExit("--plan-digest is only valid with --apply")

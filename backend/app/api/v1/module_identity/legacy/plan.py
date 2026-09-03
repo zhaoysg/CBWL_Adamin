@@ -32,11 +32,7 @@ def select_migration_candidates(
             plan.candidates,
             key=lambda item: item.legacy_sys_user_id,
         )
-        if candidate.disposition in allowed
-        and (
-            not selected_ids
-            or candidate.legacy_sys_user_id in selected_ids
-        )
+        if candidate.disposition in allowed and (not selected_ids or candidate.legacy_sys_user_id in selected_ids)
     ]
     if limit is not None:
         if limit <= 0:

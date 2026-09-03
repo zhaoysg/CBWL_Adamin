@@ -46,19 +46,14 @@ async def migrate(legacy_user_id: int):
 
 async def verify_plan() -> None:
     async with async_db_session() as db:
-        plan = await LegacyCustomerMigrationPlanner.plan_membership_candidates(
-            db
-        )
+        plan = await LegacyCustomerMigrationPlanner.plan_membership_candidates(db)
     assert plan.total == 3
     assert plan.eligible == 1
     assert plan.claim_required == 1
     assert plan.identifier_conflict == 1
     assert plan.already_mapped == 0
 
-    dispositions = {
-        item.legacy_sys_user_id: item.disposition
-        for item in plan.candidates
-    }
+    dispositions = {item.legacy_sys_user_id: item.disposition for item in plan.candidates}
     assert dispositions == {
         101: LegacyCandidateDisposition.ELIGIBLE,
         102: LegacyCandidateDisposition.CLAIM_REQUIRED,
@@ -74,9 +69,7 @@ async def verify_plan() -> None:
         include_claim_required=True,
     )
     assert [item.legacy_sys_user_id for item in full_selection] == [101, 102]
-    assert migration_selection_digest(full_selection) == (
-        migration_selection_digest(list(reversed(full_selection)))
-    )
+    assert migration_selection_digest(full_selection) == (migration_selection_digest(list(reversed(full_selection))))
 
 
 async def verify_migrations() -> None:
@@ -98,37 +91,21 @@ async def verify_migrations() -> None:
         raise AssertionError("identifier conflict was not rejected")
 
     async with async_db_session() as db:
-        maps = (
-            await db.scalars(
-                select(LegacyCustomerMapModel).order_by(
-                    LegacyCustomerMapModel.legacy_sys_user_id
-                )
-            )
-        ).all()
+        maps = (await db.scalars(select(LegacyCustomerMapModel).order_by(LegacyCustomerMapModel.legacy_sys_user_id))).all()
         assert [item.legacy_sys_user_id for item in maps] == [101, 102]
         assert [item.credential_state for item in maps] == [
             LegacyCredentialState.MIGRATED.value,
             LegacyCredentialState.CLAIM_REQUIRED.value,
         ]
 
-        eligible_identity = await db.scalar(
-            select(AuthIdentityModel).where(
-                AuthIdentityModel.identifier_normalized == "eligible_user"
-            )
-        )
+        eligible_identity = await db.scalar(select(AuthIdentityModel).where(AuthIdentityModel.identifier_normalized == "eligible_user"))
         assert eligible_identity is not None
-        assert eligible_identity.credential_hash == (
-            "$argon2id$legacy-eligible-long-hash-value"
-        )
+        assert eligible_identity.credential_hash == ("$argon2id$legacy-eligible-long-hash-value")
         assert eligible_identity.verified_at is not None
 
         claim_customer = await db.get(CustomerModel, maps[1].customer_id)
         assert claim_customer is not None
-        claim_identity_count = await db.scalar(
-            select(func.count(AuthIdentityModel.id)).where(
-                AuthIdentityModel.subject_id == claim_customer.subject_id
-            )
-        )
+        claim_identity_count = await db.scalar(select(func.count(AuthIdentityModel.id)).where(AuthIdentityModel.subject_id == claim_customer.subject_id))
         assert claim_identity_count == 0
 
         rows = (
@@ -147,12 +124,7 @@ async def verify_migrations() -> None:
 async def verify_idempotent_repair() -> None:
     async with async_db_session() as db:
         async with db.begin():
-            await db.execute(
-                text(
-                    "UPDATE cw_member_subscription "
-                    "SET customer_id = NULL WHERE id = 301"
-                )
-            )
+            await db.execute(text("UPDATE cw_member_subscription SET customer_id = NULL WHERE id = 301"))
 
     repaired = await migrate(101)
     assert repaired.created is False
@@ -164,16 +136,8 @@ async def verify_idempotent_repair() -> None:
     assert rerun.subscriptions_backfilled == 0
 
     async with async_db_session() as db:
-        map_count = await db.scalar(
-            select(func.count(LegacyCustomerMapModel.id)).where(
-                LegacyCustomerMapModel.legacy_sys_user_id == 101
-            )
-        )
-        identity_count = await db.scalar(
-            select(func.count(AuthIdentityModel.id)).where(
-                AuthIdentityModel.identifier_normalized == "eligible_user"
-            )
-        )
+        map_count = await db.scalar(select(func.count(LegacyCustomerMapModel.id)).where(LegacyCustomerMapModel.legacy_sys_user_id == 101))
+        identity_count = await db.scalar(select(func.count(AuthIdentityModel.id)).where(AuthIdentityModel.identifier_normalized == "eligible_user"))
         assert map_count == 1
         assert identity_count == 1
 
@@ -195,9 +159,7 @@ async def verify_conflict_rollback() -> None:
     except LegacyCustomerMigrationConflict:
         pass
     else:
-        raise AssertionError(
-            "conflicting subscription owner was not rejected"
-        )
+        raise AssertionError("conflicting subscription owner was not rejected")
 
     async with async_db_session() as db:
         after = (
@@ -206,22 +168,8 @@ async def verify_conflict_rollback() -> None:
             await db.scalar(select(func.count(LegacyCustomerMapModel.id))),
         )
         assert after == before
-        assert (
-            await db.scalar(
-                select(MemberSubscriptionModel.customer_id).where(
-                    MemberSubscriptionModel.id == 304
-                )
-            )
-            == 550
-        )
-        assert (
-            await db.scalar(
-                select(func.count(LegacyCustomerMapModel.id)).where(
-                    LegacyCustomerMapModel.legacy_sys_user_id == 104
-                )
-            )
-            == 0
-        )
+        assert await db.scalar(select(MemberSubscriptionModel.customer_id).where(MemberSubscriptionModel.id == 304)) == 550
+        assert await db.scalar(select(func.count(LegacyCustomerMapModel.id)).where(LegacyCustomerMapModel.legacy_sys_user_id == 104)) == 0
 
 
 async def main() -> None:

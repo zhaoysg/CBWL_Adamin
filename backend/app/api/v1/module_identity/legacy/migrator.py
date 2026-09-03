@@ -73,9 +73,7 @@ class LegacyCustomerMigrationExecutor:
         user = await load_user_for_update(db, legacy_sys_user_id)
         subscriptions = await lock_subscriptions(db, legacy_sys_user_id)
         if not subscriptions:
-            raise LegacyCustomerMigrationError(
-                "legacy user has no active migration candidate subscriptions"
-            )
+            raise LegacyCustomerMigrationError("legacy user has no active migration candidate subscriptions")
 
         existing_map = await load_mapping_for_update(
             db,
@@ -95,9 +93,7 @@ class LegacyCustomerMigrationExecutor:
             return LegacyCustomerMigrationResultSchema(
                 legacy_sys_user_id=legacy_sys_user_id,
                 customer_id=existing_map.customer_id,
-                credential_state=LegacyCredentialState(
-                    existing_map.credential_state
-                ),
+                credential_state=LegacyCredentialState(existing_map.credential_state),
                 created=False,
                 subscriptions_backfilled=backfilled,
                 reason_code=existing_map.reason_code,
@@ -133,9 +129,7 @@ class LegacyCustomerMigrationExecutor:
             credential_hash_usable=is_usable_credential_hash(user.password),
         )
         if disposition is LegacyCandidateDisposition.IDENTIFIER_CONFLICT:
-            raise LegacyCustomerMigrationConflict(
-                "customer realm identifier already exists"
-            )
+            raise LegacyCustomerMigrationConflict("customer realm identifier already exists")
 
         now = datetime.now(UTC)
         if disposition is LegacyCandidateDisposition.ELIGIBLE:
@@ -193,11 +187,7 @@ class LegacyCustomerMigrationExecutor:
         db: AsyncSession,
         user: LegacyUserSnapshot,
     ) -> CustomerModel:
-        actor_status = (
-            IdentityStatus.DISABLED.value
-            if user.status != 0
-            else IdentityStatus.ACTIVE.value
-        )
+        actor_status = IdentityStatus.DISABLED.value if user.status != 0 else IdentityStatus.ACTIVE.value
         subject = AuthSubjectModel(
             realm=IdentityRealm.CUSTOMER.value,
             status=actor_status,
