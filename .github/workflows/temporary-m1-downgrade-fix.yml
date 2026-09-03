@@ -38,18 +38,16 @@ jobs:
           upgrade_start = text.index("\ndef upgrade", helper_start)
           text = text[:helper_start] + "\n" + text[upgrade_start:]
           downgrade_start = text.index("\ndef downgrade() -> None:")
-          text = text[:downgrade_start] + '''
-
-def downgrade() -> None:
-    # Dropping a MySQL table removes its foreign keys and supporting indexes.
-    # Explicitly dropping those indexes first fails with error 1553 because
-    # they are still required by the table's composite foreign key.
-    op.drop_table("cw_customer")
-    op.drop_table("sys_admin_account")
-    op.drop_table("auth_identity")
-    op.drop_table("auth_subject")
-'''
-          path.write_text(text, encoding="utf-8")
+          replacement = (
+              "\n\ndef downgrade() -> None:\n"
+              "    # Dropping a MySQL table removes its foreign keys and supporting indexes.\n"
+              "    # Explicit index removal first fails while a foreign key still depends on it.\n"
+              "    op.drop_table(\"cw_customer\")\n"
+              "    op.drop_table(\"sys_admin_account\")\n"
+              "    op.drop_table(\"auth_identity\")\n"
+              "    op.drop_table(\"auth_subject\")\n"
+          )
+          path.write_text(text[:downgrade_start] + replacement, encoding="utf-8")
           PY
 
       - name: Apply repository Ruff formatter
