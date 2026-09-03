@@ -1,4 +1,4 @@
-name: Temporary M4 format and canonical test v3
+name: Temporary M4 format and canonical test v4
 
 on:
   push:
@@ -29,6 +29,55 @@ jobs:
       - name: Sync dependencies
         working-directory: backend
         run: uv sync --frozen
+
+      - name: Apply deterministic callback-time and test fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: Path, old: str, new: str) -> None:
+              content = path.read_text(encoding="utf-8")
+              count = content.count(old)
+              if count != 1:
+                  raise RuntimeError(
+                      f"expected one match in {path}, found {count}: {old!r}"
+                  )
+              path.write_text(content.replace(old, new), encoding="utf-8")
+
+          service = Path("backend/app/api/v1/module_commerce/service.py")
+          unit_test = Path("backend/tests/test_commerce_order_payment.py")
+
+          replace_once(
+              unit_test,
+              "customer, mapped_legacy, subject, first_plan, second_plan",
+              "customer, mapped_legacy, _subject, first_plan, second_plan",
+          )
+          replace_once(
+              service,
+              "            occurred_at=as_utc(data.occurred_at),",
+              "            occurred_at=self._event_time(data.occurred_at),",
+          )
+          replace_once(
+              service,
+              "            occurred_at = as_utc(data.occurred_at)",
+              "            occurred_at = cls._event_time(data.occurred_at)",
+          )
+          replace_once(
+              service,
+              "            or as_utc(existing.occurred_at) != as_utc(data.occurred_at)",
+              "            or CommerceService._event_time(existing.occurred_at)\n"
+              "            != CommerceService._event_time(data.occurred_at)",
+          )
+
+          anchor = "    @staticmethod\n    def _new_number(prefix: str) -> str:\n"
+          helper = (
+              "    @staticmethod\n"
+              "    def _event_time(value: datetime) -> datetime:\n"
+              "        \"\"\"Normalize provider timestamps to stable DB precision.\"\"\"\n\n"
+              "        return as_utc(value).replace(microsecond=0)\n\n"
+          )
+          replace_once(service, anchor, helper + anchor)
+          PY
 
       - name: Require one canonical commerce implementation
         run: |
@@ -76,5 +125,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
-          git commit -m "fix(commerce): consolidate and format canonical order payment module"
+          git commit -m "fix(commerce): normalize callback time and verify canonical state machine"
           git push origin HEAD:feature/m4-commerce-order-payment-expand
