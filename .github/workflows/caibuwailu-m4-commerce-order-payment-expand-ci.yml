@@ -1,0 +1,194 @@
+name: 财不外露 M4 订单支付 Expand CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m4-commerce-order-payment-expand
+    paths:
+      - "backend/app/api/v1/module_commerce/**"
+      - "backend/app/alembic/versions/20260903_02_commerce_order_payment_expand.py"
+      - "backend/tests/test_commerce_order_payment.py"
+      - "backend/tests/mysql/verify_commerce_order_payment_expand.py"
+      - ".github/workflows/caibuwailu-m4-commerce-order-payment-expand-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/api/v1/module_commerce/**"
+      - "backend/app/alembic/versions/20260903_02_commerce_order_payment_expand.py"
+      - "backend/tests/test_commerce_order_payment.py"
+      - "backend/tests/mysql/verify_commerce_order_payment_expand.py"
+      - ".github/workflows/caibuwailu-m4-commerce-order-payment-expand-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m4-commerce-order-payment-expand-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  commerce-quality:
+    name: Ownership, amount integrity and callback idempotency
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile changed files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_commerce
+          app/alembic/versions/20260903_02_commerce_order_payment_expand.py
+          tests/test_commerce_order_payment.py
+          tests/mysql/verify_commerce_order_payment_expand.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_commerce
+          app/alembic/versions/20260903_02_commerce_order_payment_expand.py
+          tests/test_commerce_order_payment.py
+          tests/mysql/verify_commerce_order_payment_expand.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_commerce
+          app/alembic/versions/20260903_02_commerce_order_payment_expand.py
+          tests/test_commerce_order_payment.py
+          tests/mysql/verify_commerce_order_payment_expand.py
+
+      - name: Security scan commerce boundary
+        run: >-
+          uvx bandit -q -r
+          app/api/v1/module_commerce
+
+      - name: Run commerce service contracts
+        run: uv run pytest -q tests/test_commerce_order_payment.py
+
+  mysql-commerce:
+    name: MySQL 8.4 migration, constraints and reversible ownership
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+      PORTAL_IDENTITY_MODE: dual
+      PORTAL_ENTITLEMENT_MODE: dual
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system identity boundary
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE sys_user ("
+                      "id INT PRIMARY KEY, "
+                      "is_deleted BOOLEAN NOT NULL DEFAULT FALSE"
+                      ") ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through commerce head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify commerce transitions on real MySQL
+        run: >-
+          uv run python -m
+          tests.mysql.verify_commerce_order_payment_expand
+
+      - name: Downgrade commerce revision only
+        run: uv run alembic -c alembic.ini downgrade 20260903_01
+
+      - name: Verify commerce tables are removed and prior domains remain
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          inspector = inspect(engine)
+          tables = set(inspector.get_table_names())
+          assert "cw_order" not in tables
+          assert "cw_payment_attempt" not in tables
+          assert "cw_payment_event" not in tables
+          assert "cw_customer" in tables
+          assert "cw_member_subscription" in tables
+          engine.dispose()
+          PY
+
+      - name: Re-upgrade commerce revision
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify commerce tables are restored
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          tables = set(inspect(engine).get_table_names())
+          assert {"cw_order", "cw_payment_attempt", "cw_payment_event"} <= tables
+          engine.dispose()
+          PY
