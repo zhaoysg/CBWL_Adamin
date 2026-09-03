@@ -7,7 +7,10 @@ from fastapi.testclient import TestClient
 
 from app.common.enums import EnvironmentEnum
 from app.config.portal_auth import portal_auth_settings
-from app.config.production_guard import UnsafeProductionConfiguration, validate_production_settings
+from app.config.production_guard import (
+    UnsafeProductionConfiguration,
+    validate_production_settings,
+)
 from app.config.setting import settings
 
 
@@ -27,14 +30,20 @@ def _create_portal_user(test_client: TestClient) -> tuple[str, str]:
     return username, password
 
 
-def _portal_login(test_client: TestClient, username: str, password: str):
+def _portal_login(
+    test_client: TestClient,
+    username: str,
+    password: str,
+):
     return test_client.post(
         "/portal/auth/login",
         json={"username": username, "password": password},
     )
 
 
-def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
+def test_portal_auth_login_refresh_logout_flow(
+    test_client: TestClient,
+) -> None:
     username, password = _create_portal_user(test_client)
     login = _portal_login(test_client, username, password)
     assert login.status_code == 200, login.text
@@ -83,15 +92,13 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
     assert (
         test_client.get(
             "/portal/home",
-            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
+            headers={
+                "Authorization": f"Bearer {refresh_data['access_token']}"
+            },
         ).status_code
         == 200
     )
 
-    # Send the old token only on this request. Mutating the session-scoped
-    # client's cookie jar with ``Cookies.set`` and no domain creates a second,
-    # hostless cookie that the server cannot remove with its host-scoped
-    # Set-Cookie deletion, contaminating later tests.
     reused = test_client.post(
         "/portal/auth/refresh",
         headers={"Cookie": f"{cookie_name}={old_refresh}"},
@@ -107,23 +114,35 @@ def test_portal_auth_login_refresh_logout_flow(test_client: TestClient) -> None:
     assert (
         test_client.get(
             "/portal/home",
-            headers={"Authorization": f"Bearer {refresh_data['access_token']}"},
+            headers={
+                "Authorization": f"Bearer {refresh_data['access_token']}"
+            },
         ).status_code
         == 401
     )
 
 
-def test_portal_auth_returns_generic_invalid_credentials(test_client: TestClient) -> None:
-    response = _portal_login(test_client, f"missing_{uuid4().hex[:8]}", "Portal123!")
+def test_portal_auth_returns_generic_invalid_credentials(
+    test_client: TestClient,
+) -> None:
+    response = _portal_login(
+        test_client,
+        f"missing_{uuid4().hex[:8]}",
+        "Portal123!",
+    )
     assert response.status_code == 401
     assert response.json()["msg"] == "账号或密码错误"
 
 
-def test_portal_auth_rejects_superuser_login(test_client: TestClient) -> None:
+def test_portal_auth_rejects_superuser_login(
+    test_client: TestClient,
+) -> None:
     response = _portal_login(test_client, "admin", "admin123")
     assert response.status_code == 403
     assert "管理员账号" in response.json()["msg"]
-    assert not test_client.cookies.get(portal_auth_settings.REFRESH_COOKIE_NAME)
+    assert not test_client.cookies.get(
+        portal_auth_settings.REFRESH_COOKIE_NAME
+    )
 
 
 def test_portal_rejects_administration_session(
@@ -135,13 +154,21 @@ def test_portal_rejects_administration_session(
     assert "客户端会话类型" in response.json()["msg"]
 
 
-def test_portal_captcha_disabled_contract(test_client: TestClient) -> None:
+def test_portal_captcha_disabled_contract(
+    test_client: TestClient,
+) -> None:
     response = test_client.get("/portal/auth/captcha")
     assert response.status_code == 200, response.text
-    assert response.json() == {"enable": False, "key": "disabled", "question": None}
+    assert response.json() == {
+        "enable": False,
+        "key": "disabled",
+        "question": None,
+    }
 
 
-def test_portal_login_rejects_legacy_h5_captcha_field(test_client: TestClient) -> None:
+def test_portal_login_rejects_legacy_h5_captcha_field(
+    test_client: TestClient,
+) -> None:
     response = test_client.post(
         "/portal/auth/login",
         json={
@@ -154,34 +181,161 @@ def test_portal_login_rejects_legacy_h5_captcha_field(test_client: TestClient) -
     assert response.status_code == 422
 
 
-def _set_safe_production_settings(monkeypatch: pytest.MonkeyPatch, *, database_type: str) -> None:
+def _set_safe_production_settings(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    database_type: str,
+    identity_mode: str = "legacy",
+    entitlement_mode: str = "legacy",
+) -> None:
     monkeypatch.setattr(settings, "ENVIRONMENT", EnvironmentEnum.PROD)
     monkeypatch.setattr(settings, "SECRET_KEY", "x" * 48)
-    monkeypatch.setattr(settings, "PROD_CORS_ORIGINS", "https://admin.example.com,https://m.example.com")
-    monkeypatch.setattr(settings, "ALLOWED_HOSTS", ["api.example.com"])
+    monkeypatch.setattr(
+        settings,
+        "PROD_CORS_ORIGINS",
+        "https://admin.example.com,https://m.example.com",
+    )
+    monkeypatch.setattr(
+        settings,
+        "ALLOWED_HOSTS",
+        ["api.example.com"],
+    )
     monkeypatch.setattr(settings, "ALLOW_CREDENTIALS", True)
     monkeypatch.setattr(settings, "ACCESS_TOKEN_EXPIRE_SECONDS", 900)
-    monkeypatch.setattr(settings, "REFRESH_TOKEN_EXPIRE_SECONDS", 604800)
+    monkeypatch.setattr(
+        settings,
+        "REFRESH_TOKEN_EXPIRE_SECONDS",
+        604800,
+    )
     monkeypatch.setattr(settings, "DATABASE_TYPE", database_type)
     monkeypatch.setattr(settings, "DATABASE_HOST", "mysql.internal")
     monkeypatch.setattr(settings, "DATABASE_USER", "caibuwailu")
-    monkeypatch.setattr(settings, "DATABASE_PASSWORD", "test-only-password")
+    monkeypatch.setattr(
+        settings,
+        "DATABASE_PASSWORD",
+        "test-only-password",
+    )
     monkeypatch.setattr(settings, "DATABASE_NAME", "caibuwailu")
 
-    monkeypatch.setattr(portal_auth_settings, "ALLOWED_ORIGINS", "https://m.example.com")
-    monkeypatch.setattr(portal_auth_settings, "REFRESH_COOKIE_PATH", "/api/v1/portal/auth")
-    monkeypatch.setattr(portal_auth_settings, "REFRESH_COOKIE_SECURE", True)
-    monkeypatch.setattr(portal_auth_settings, "RATE_LIMIT_ENABLE", True)
-    monkeypatch.setattr(portal_auth_settings, "ALLOW_SUPERUSER_LOGIN", False)
-    monkeypatch.setattr(portal_auth_settings, "ALLOWED_LOGIN_TYPES", "H5")
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "ALLOWED_ORIGINS",
+        "https://m.example.com",
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "REFRESH_COOKIE_PATH",
+        "/api/v1/portal/auth",
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "REFRESH_COOKIE_SECURE",
+        True,
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "RATE_LIMIT_ENABLE",
+        True,
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "ALLOW_SUPERUSER_LOGIN",
+        False,
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "ALLOWED_LOGIN_TYPES",
+        "H5",
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "IDENTITY_MODE",
+        identity_mode,
+    )
+    monkeypatch.setattr(
+        portal_auth_settings,
+        "ENTITLEMENT_MODE",
+        entitlement_mode,
+    )
 
 
-def test_production_guard_rejects_non_mysql_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_safe_production_settings(monkeypatch, database_type="sqlite")
-    with pytest.raises(UnsafeProductionConfiguration, match="DATABASE_TYPE=mysql"):
+def test_production_guard_rejects_non_mysql_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_safe_production_settings(
+        monkeypatch,
+        database_type="sqlite",
+    )
+    with pytest.raises(
+        UnsafeProductionConfiguration,
+        match="DATABASE_TYPE=mysql",
+    ):
         validate_production_settings()
 
 
-def test_production_guard_accepts_remote_mysql_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    _set_safe_production_settings(monkeypatch, database_type="mysql")
+def test_production_guard_accepts_remote_mysql_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_safe_production_settings(
+        monkeypatch,
+        database_type="mysql",
+    )
+    validate_production_settings()
+
+
+@pytest.mark.parametrize(
+    ("identity_mode", "entitlement_mode", "error_text"),
+    [
+        (
+            "legacy",
+            "customer",
+            "不能与 legacy 身份模式组合",
+        ),
+        (
+            "customer",
+            "dual",
+            "权益读取也必须使用 customer",
+        ),
+    ],
+)
+def test_production_guard_rejects_unsafe_rollout_mode_combinations(
+    monkeypatch: pytest.MonkeyPatch,
+    identity_mode: str,
+    entitlement_mode: str,
+    error_text: str,
+) -> None:
+    _set_safe_production_settings(
+        monkeypatch,
+        database_type="mysql",
+        identity_mode=identity_mode,
+        entitlement_mode=entitlement_mode,
+    )
+    with pytest.raises(
+        UnsafeProductionConfiguration,
+        match=error_text,
+    ):
+        validate_production_settings()
+
+
+@pytest.mark.parametrize(
+    ("identity_mode", "entitlement_mode"),
+    [
+        ("legacy", "legacy"),
+        ("dual", "legacy"),
+        ("dual", "dual"),
+        ("dual", "customer"),
+        ("customer", "customer"),
+    ],
+)
+def test_production_guard_accepts_safe_rollout_mode_combinations(
+    monkeypatch: pytest.MonkeyPatch,
+    identity_mode: str,
+    entitlement_mode: str,
+) -> None:
+    _set_safe_production_settings(
+        monkeypatch,
+        database_type="mysql",
+        identity_mode=identity_mode,
+        entitlement_mode=entitlement_mode,
+    )
     validate_production_settings()
