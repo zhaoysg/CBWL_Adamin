@@ -29,10 +29,11 @@ jobs:
             | sha256sum -c -
           test "$(tar -tzf /tmp/m4files.tar.gz | grep -Ec '(^/|(^|/)\.\.(/|$))')" -eq 0
           tar -xzf /tmp/m4files.tar.gz
+          rm .github/workflows/caibuwailu-m4-commerce-order-payment-expand-ci.yml
           rm -rf .github/m4-bootstrap
           rm .github/workflows/temporary-m4-commerce-bootstrap.yml
 
-      - name: Commit reviewed M4 files atomically
+      - name: Commit reviewed non-workflow M4 files atomically
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
