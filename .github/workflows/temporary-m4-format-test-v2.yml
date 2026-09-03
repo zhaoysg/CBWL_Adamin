@@ -1,4 +1,4 @@
-name: Temporary M4 format and canonical test v4
+name: Temporary M4 format and canonical test v5
 
 on:
   push:
@@ -30,7 +30,7 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
 
-      - name: Apply deterministic callback-time and test fixes
+      - name: Normalize callback time to stable database precision
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -45,13 +45,6 @@ jobs:
               path.write_text(content.replace(old, new), encoding="utf-8")
 
           service = Path("backend/app/api/v1/module_commerce/service.py")
-          unit_test = Path("backend/tests/test_commerce_order_payment.py")
-
-          replace_once(
-              unit_test,
-              "customer, mapped_legacy, subject, first_plan, second_plan",
-              "customer, mapped_legacy, _subject, first_plan, second_plan",
-          )
           replace_once(
               service,
               "            occurred_at=as_utc(data.occurred_at),",
