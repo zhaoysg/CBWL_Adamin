@@ -106,8 +106,7 @@ class PortalCustomerAuthService:
                 .outerjoin(
                     UserModel,
                     and_(
-                        UserModel.id
-                        == LegacyCustomerMapModel.legacy_sys_user_id,
+                        UserModel.id == LegacyCustomerMapModel.legacy_sys_user_id,
                         UserModel.is_deleted.is_(False),
                     ),
                 )
@@ -128,8 +127,7 @@ class PortalCustomerAuthService:
                 and not customer.is_deleted
                 and customer.status == IdentityStatus.ACTIVE
                 and mapping is not None
-                and mapping.credential_state
-                == LegacyCredentialState.MIGRATED
+                and mapping.credential_state == LegacyCredentialState.MIGRATED
                 and legacy_user is not None
                 and legacy_user.status == 0
                 and not legacy_user.is_superuser
@@ -162,8 +160,7 @@ class PortalCustomerAuthService:
                 .join(
                     LegacyCustomerMapModel,
                     and_(
-                        LegacyCustomerMapModel.legacy_sys_user_id
-                        == UserModel.id,
+                        LegacyCustomerMapModel.legacy_sys_user_id == UserModel.id,
                         LegacyCustomerMapModel.is_deleted.is_(False),
                     ),
                 )
@@ -182,10 +179,7 @@ class PortalCustomerAuthService:
             password_hash=legacy_user.password,
         ):
             return CustomerLoginResolution(outcome="blocked")
-        if (
-            mapping.credential_state
-            == LegacyCredentialState.CLAIM_REQUIRED
-        ):
+        if mapping.credential_state == LegacyCredentialState.CLAIM_REQUIRED:
             return CustomerLoginResolution(outcome="claim_required")
         return CustomerLoginResolution(outcome="blocked")
 
@@ -198,16 +192,10 @@ class PortalCustomerAuthService:
         account: PortalCustomerAccount,
     ) -> JWTOutSchema:
         session_id = str(uuid.uuid4())
-        access_expires = timedelta(
-            seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS
-        )
-        refresh_expires = timedelta(
-            seconds=settings.REFRESH_TOKEN_EXPIRE_SECONDS
-        )
+        access_expires = timedelta(seconds=settings.ACCESS_TOKEN_EXPIRE_SECONDS)
+        refresh_expires = timedelta(seconds=settings.REFRESH_TOKEN_EXPIRE_SECONDS)
         now = datetime.now(UTC)
-        ua_result = ua_parser.parse(
-            request.headers.get("user-agent") or ""
-        )
+        ua_result = ua_parser.parse(request.headers.get("user-agent") or "")
         session = {
             "session_id": session_id,
             "actor_type": "customer",
@@ -230,14 +218,8 @@ class PortalCustomerAuthService:
             "menu_ids": [],
             "ipaddr": get_client_ip(request),
             "login_location": None,
-            "os": (
-                ua_result.os.family if ua_result.os else "Unknown"
-            ),
-            "browser": (
-                ua_result.user_agent.family
-                if ua_result.user_agent
-                else "Unknown"
-            ),
+            "os": (ua_result.os.family if ua_result.os else "Unknown"),
+            "browser": (ua_result.user_agent.family if ua_result.user_agent else "Unknown"),
             "login_time": now.isoformat(),
             "login_type": "H5",
         }
@@ -323,8 +305,7 @@ class PortalCustomerAuthService:
                 LegacyCustomerMapModel,
                 and_(
                     LegacyCustomerMapModel.customer_id == CustomerModel.id,
-                    LegacyCustomerMapModel.legacy_sys_user_id
-                    == legacy_user_id,
+                    LegacyCustomerMapModel.legacy_sys_user_id == legacy_user_id,
                     LegacyCustomerMapModel.is_deleted.is_(False),
                 ),
             )
@@ -346,8 +327,7 @@ class PortalCustomerAuthService:
                 AuthIdentityModel.provider == IdentityProvider.PASSWORD,
                 AuthIdentityModel.status == IdentityStatus.ACTIVE,
                 AuthIdentityModel.is_deleted.is_(False),
-                LegacyCustomerMapModel.credential_state
-                == LegacyCredentialState.MIGRATED,
+                LegacyCustomerMapModel.credential_state == LegacyCredentialState.MIGRATED,
                 UserModel.status == 0,
                 UserModel.is_superuser.is_(False),
             )

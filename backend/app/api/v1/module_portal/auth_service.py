@@ -53,9 +53,7 @@ class PortalAuthService:
             bucket="captcha",
             identity=get_client_ip(request) or "unknown",
             limit=portal_auth_settings.CAPTCHA_ISSUE_LIMIT,
-            window_seconds=(
-                portal_auth_settings.CAPTCHA_ISSUE_WINDOW_SECONDS
-            ),
+            window_seconds=(portal_auth_settings.CAPTCHA_ISSUE_WINDOW_SECONDS),
         )
         if not settings.CAPTCHA_ENABLE:
             return PortalCaptchaResponse(
@@ -101,18 +99,13 @@ class PortalAuthService:
         db: AsyncSession,
         data: PortalLoginInput,
     ) -> tuple[PortalAuthSessionResponse, str]:
-        identity = (
-            f"{get_client_ip(request) or 'unknown'}:"
-            f"{data.username.casefold()}"
-        )
+        identity = f"{get_client_ip(request) or 'unknown'}:{data.username.casefold()}"
         await cls._enforce_rate_limit(
             redis=redis,
             bucket="login",
             identity=identity,
             limit=portal_auth_settings.LOGIN_ATTEMPT_LIMIT,
-            window_seconds=(
-                portal_auth_settings.LOGIN_ATTEMPT_WINDOW_SECONDS
-            ),
+            window_seconds=(portal_auth_settings.LOGIN_ATTEMPT_WINDOW_SECONDS),
         )
         await cls._consume_captcha(
             redis=redis,
@@ -128,9 +121,7 @@ class PortalAuthService:
             )
             if resolution.outcome == "customer":
                 if resolution.account is None:
-                    raise RuntimeError(
-                        "customer login resolved without an account"
-                    )
+                    raise RuntimeError("customer login resolved without an account")
                 token = await PortalCustomerAuthService.create_token(
                     request=request,
                     redis=redis,
@@ -149,9 +140,7 @@ class PortalAuthService:
                             identity_source="customer",
                             customer_id=resolution.account.customer_id,
                             subject_id=resolution.account.subject_id,
-                            legacy_user_id=(
-                                resolution.account.legacy_user_id
-                            ),
+                            legacy_user_id=(resolution.account.legacy_user_id),
                         ),
                     ),
                     token.refresh_token,
@@ -162,10 +151,7 @@ class PortalAuthService:
                     code=status.HTTP_409_CONFLICT,
                     status_code=status.HTTP_409_CONFLICT,
                 )
-            if (
-                resolution.outcome == "blocked"
-                or portal_auth_settings.IDENTITY_MODE == "customer"
-            ):
+            if resolution.outcome == "blocked" or portal_auth_settings.IDENTITY_MODE == "customer":
                 cls._raise_invalid_credentials()
 
         return await cls._legacy_login(
@@ -210,10 +196,7 @@ class PortalAuthService:
                 cls._raise_invalid_credentials(exc)
             raise
 
-        if (
-            bool(result.user_info.get("is_superuser"))
-            and not portal_auth_settings.ALLOW_SUPERUSER_LOGIN
-        ):
+        if bool(result.user_info.get("is_superuser")) and not portal_auth_settings.ALLOW_SUPERUSER_LOGIN:
             await LoginService.logout(
                 redis=redis,
                 token=result.refresh_token,
@@ -379,9 +362,7 @@ class PortalAuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
         redis_crud = RedisCURD(redis)
-        current = await redis_crud.get(
-            f"{RedisInitKeyConfig.REFRESH_TOKEN.key}:{payload.sub}"
-        )
+        current = await redis_crud.get(f"{RedisInitKeyConfig.REFRESH_TOKEN.key}:{payload.sub}")
         if isinstance(current, bytes):
             current = current.decode("utf-8")
         if not isinstance(current, str) or not hmac.compare_digest(
@@ -411,9 +392,7 @@ class PortalAuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED,
             )
         redis_crud = RedisCURD(redis)
-        current = await redis_crud.get(
-            f"{RedisInitKeyConfig.ACCESS_TOKEN.key}:{payload.sub}"
-        )
+        current = await redis_crud.get(f"{RedisInitKeyConfig.ACCESS_TOKEN.key}:{payload.sub}")
         if isinstance(current, bytes):
             current = current.decode("utf-8")
         if not isinstance(current, str) or not hmac.compare_digest(
@@ -444,9 +423,7 @@ class PortalAuthService:
         redis_crud: RedisCURD,
         session_id: str,
     ) -> dict[str, Any]:
-        raw = await redis_crud.get(
-            f"{RedisInitKeyConfig.USER_SESSION.key}:{session_id}"
-        )
+        raw = await redis_crud.get(f"{RedisInitKeyConfig.USER_SESSION.key}:{session_id}")
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8")
         if not isinstance(raw, str):
@@ -473,10 +450,7 @@ class PortalAuthService:
 
     @classmethod
     def _assert_portal_session(cls, session: dict[str, Any]) -> None:
-        if (
-            str(session.get("login_type") or "")
-            not in portal_auth_settings.allowed_login_types
-        ):
+        if str(session.get("login_type") or "") not in portal_auth_settings.allowed_login_types:
             raise CustomException(
                 msg="客户端会话类型不匹配",
                 code=RET.UNAUTHORIZED.code,
@@ -484,9 +458,7 @@ class PortalAuthService:
             )
         actor = cls._session_actor(session)
         mode = portal_auth_settings.IDENTITY_MODE
-        if (mode == "legacy" and actor != "legacy") or (
-            mode == "customer" and actor != "customer"
-        ):
+        if (mode == "legacy" and actor != "legacy") or (mode == "customer" and actor != "customer"):
             raise CustomException(
                 msg="客户身份模式不匹配",
                 code=RET.UNAUTHORIZED.code,

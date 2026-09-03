@@ -53,18 +53,14 @@ def _create_legacy_portal_user(
 
 async def _legacy_user(username: str) -> UserModel:
     async with async_db_session() as db:
-        user = await db.scalar(
-            select(UserModel).where(UserModel.username == username)
-        )
+        user = await db.scalar(select(UserModel).where(UserModel.username == username))
         assert user is not None
         return user
 
 
 async def _map_migrated_customer(username: str) -> tuple[int, int, int]:
     async with async_db_session() as db, db.begin():
-        user = await db.scalar(
-            select(UserModel).where(UserModel.username == username)
-        )
+        user = await db.scalar(select(UserModel).where(UserModel.username == username))
         assert user is not None
         provisioned = await IdentityService.create_customer(
             db,
@@ -98,9 +94,7 @@ async def _map_migrated_customer(username: str) -> tuple[int, int, int]:
 
 async def _map_claim_required_customer(username: str) -> tuple[int, int]:
     async with async_db_session() as db, db.begin():
-        user = await db.scalar(
-            select(UserModel).where(UserModel.username == username)
-        )
+        user = await db.scalar(select(UserModel).where(UserModel.username == username))
         assert user is not None
         subject = AuthSubjectModel(
             realm=IdentityRealm.CUSTOMER.value,
@@ -125,9 +119,7 @@ async def _map_claim_required_customer(username: str) -> tuple[int, int]:
             LegacyCustomerMapModel(
                 legacy_sys_user_id=user.id,
                 customer_id=customer.id,
-                credential_state=(
-                    LegacyCredentialState.CLAIM_REQUIRED.value
-                ),
+                credential_state=(LegacyCredentialState.CLAIM_REQUIRED.value),
                 source=LegacyMigrationSource.MEMBERSHIP.value,
                 reason_code="role",
                 identifier_snapshot=user.username.casefold(),
@@ -163,9 +155,7 @@ async def test_dual_mode_prefers_migrated_customer_identity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     username, password = _create_legacy_portal_user(test_client)
-    customer_id, subject_id, legacy_user_id = await _map_migrated_customer(
-        username
-    )
+    customer_id, subject_id, legacy_user_id = await _map_migrated_customer(username)
     monkeypatch.setattr(portal_auth_settings, "IDENTITY_MODE", "dual")
 
     login = _login(test_client, username, password)
@@ -234,9 +224,7 @@ async def test_claim_required_mapping_cannot_bypass_with_legacy_password(
     response = _login(test_client, username, password)
     assert response.status_code == 409
     assert "身份认领" in response.json()["msg"]
-    assert not test_client.cookies.get(
-        portal_auth_settings.REFRESH_COOKIE_NAME
-    )
+    assert not test_client.cookies.get(portal_auth_settings.REFRESH_COOKIE_NAME)
 
     wrong = _login(test_client, username, "Wrong123!")
     assert wrong.status_code == 401

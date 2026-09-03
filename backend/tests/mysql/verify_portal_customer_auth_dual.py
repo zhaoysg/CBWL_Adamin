@@ -62,12 +62,7 @@ async def _seed() -> tuple[str, str]:
                 "legacy_hash": legacy_hash,
             },
         )
-        await db.execute(
-            text(
-                "INSERT INTO sys_user_roles (user_id, role_id) "
-                "VALUES (202, 9202)"
-            )
-        )
+        await db.execute(text("INSERT INTO sys_user_roles (user_id, role_id) VALUES (202, 9202)"))
         await db.execute(
             text(
                 "INSERT INTO cw_member_plan "
@@ -144,9 +139,7 @@ async def main() -> None:
         account=account,
     )
     payload = decode_access_token(token=token.access_token, verify_exp=True)
-    raw = await RedisCURD(redis).get(
-        f"{RedisInitKeyConfig.USER_SESSION.key}:{payload.sub}"
-    )
+    raw = await RedisCURD(redis).get(f"{RedisInitKeyConfig.USER_SESSION.key}:{payload.sub}")
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8")
     session = json.loads(raw)
@@ -158,12 +151,7 @@ async def main() -> None:
 
     async with async_db_session() as db:
         await PortalCustomerAuthService.validate_session(db, session)
-        customer_id = await db.scalar(
-            text(
-                "SELECT customer_id FROM cw_member_subscription "
-                "WHERE id = 2301"
-            )
-        )
+        customer_id = await db.scalar(text("SELECT customer_id FROM cw_member_subscription WHERE id = 2301"))
         assert customer_id == account.customer_id
     await redis.aclose()
     print("portal customer dual authentication MySQL verification passed")
