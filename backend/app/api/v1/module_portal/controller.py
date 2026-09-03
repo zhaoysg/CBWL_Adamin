@@ -3,11 +3,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.base_schema import AuthSchema
 from app.core.dependencies import db_getter
 
-from .auth_dependency import get_optional_portal_user
+from .auth_dependency import get_optional_portal_principal
 from .database_service import DatabasePortalService
+from .principal import PortalPrincipal
 from .runtime import PortalRuntimeState, get_portal_runtime_state, require_portal_runtime
 from .schema import (
     AcademyResponse,
@@ -54,52 +54,70 @@ async def portal_health(response: Response) -> PortalHealth:
 async def get_home(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
 ) -> HomeResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         return PortalService.home()
-    return await DatabasePortalService(db, auth).home()
+    return await DatabasePortalService(db, principal).home()
 
 
 @PortalRouter.get("/academy", summary="获取投研学院聚合数据")
 async def get_academy(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
 ) -> AcademyResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         return PortalService.academy()
-    return await DatabasePortalService(db, auth).academy()
+    return await DatabasePortalService(db, principal).academy()
 
 
 @PortalRouter.get("/profile", summary="获取会员个人中心")
 async def get_profile(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
 ) -> ProfileResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         return PortalService.profile()
-    return await DatabasePortalService(db, auth).profile()
+    return await DatabasePortalService(db, principal).profile()
 
 
 @PortalRouter.get("/content/{content_id}", summary="获取投研内容详情（严格权限）")
 async def get_content_detail(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
     content_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
 ) -> ContentDetailResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         result = PortalService.content_detail(content_id)
     else:
-        result = await DatabasePortalService(db, auth).content_detail(content_id)
+        result = await DatabasePortalService(
+            db,
+            principal,
+        ).content_detail(content_id)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="内容不存在",
+        )
     return result
 
 
@@ -107,16 +125,25 @@ async def get_content_detail(
 async def get_content_preview(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
     content_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
 ) -> ContentDetailResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         result = PortalService.content_detail(content_id)
     else:
-        result = await DatabasePortalService(db, auth).content_preview(content_id)
+        result = await DatabasePortalService(
+            db,
+            principal,
+        ).content_preview(content_id)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="内容不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="内容不存在",
+        )
     return result
 
 
@@ -124,16 +151,25 @@ async def get_content_preview(
 async def get_course_detail(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
     course_id: Annotated[int, Path(gt=0, le=2_147_483_647)],
 ) -> CourseDetailResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         result = PortalService.course_detail(course_id)
     else:
-        result = await DatabasePortalService(db, auth).course_detail(course_id)
+        result = await DatabasePortalService(
+            db,
+            principal,
+        ).course_detail(course_id)
     if result is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="课程不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="课程不存在",
+        )
     return result
 
 
@@ -141,9 +177,12 @@ async def get_course_detail(
 async def get_member_center(
     response: Response,
     db: Annotated[AsyncSession, Depends(db_getter)],
-    auth: Annotated[AuthSchema | None, Depends(get_optional_portal_user)],
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
 ) -> MemberCenterResponse:
     state = _prepare_response(response)
     if state.data_source == "demo":
         return PortalService.member_center()
-    return await DatabasePortalService(db, auth).member_center()
+    return await DatabasePortalService(db, principal).member_center()

@@ -11,10 +11,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.config.path_conf import ENV_DIR
 
 PortalIdentityMode = Literal["legacy", "dual", "customer"]
+PortalEntitlementMode = Literal["legacy", "dual", "customer"]
 
 
 class PortalAuthSettings(BaseSettings):
-    """H5 Portal authentication settings isolated from administration login."""
+    """H5 Portal authentication and entitlement migration settings."""
 
     model_config = SettingsConfigDict(
         env_file=ENV_DIR / f".env.{os.getenv('ENVIRONMENT')}",
@@ -28,6 +29,7 @@ class PortalAuthSettings(BaseSettings):
     ALLOWED_LOGIN_TYPES: str = "H5,移动端"
     ALLOW_SUPERUSER_LOGIN: bool = False
     IDENTITY_MODE: PortalIdentityMode = "legacy"
+    ENTITLEMENT_MODE: PortalEntitlementMode = "legacy"
 
     REFRESH_COOKIE_NAME: str = "cbwl_portal_refresh"
     REFRESH_COOKIE_PATH: str = "/"
@@ -100,6 +102,7 @@ portal_auth_settings = get_portal_auth_settings()
 
 __all__ = [
     "PortalAuthSettings",
+    "PortalEntitlementMode",
     "PortalIdentityMode",
     "_canonical_origin",
     "portal_auth_settings",

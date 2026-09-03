@@ -29,7 +29,12 @@ def validate_production_settings() -> None:
 
     if settings.DATABASE_TYPE != "mysql":
         errors.append("生产运行只允许 DATABASE_TYPE=mysql；SQLite 仅限自动化测试")
-    if settings.DATABASE_HOST.strip().lower() in {"", "localhost", "127.0.0.1", "::1"}:
+    if settings.DATABASE_HOST.strip().lower() in {
+        "",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }:
         errors.append("生产 MySQL 必须使用明确的远程或容器服务主机，禁止本机地址")
     if not settings.DATABASE_USER.strip():
         errors.append("生产 MySQL 必须配置 DATABASE_USER")
@@ -67,6 +72,13 @@ def validate_production_settings() -> None:
         errors.append("生产 H5 禁止超级管理员账号登录")
     if "H5" not in portal_auth_settings.allowed_login_types:
         errors.append("PORTAL_ALLOWED_LOGIN_TYPES 必须包含 H5")
+
+    identity_mode = portal_auth_settings.IDENTITY_MODE
+    entitlement_mode = portal_auth_settings.ENTITLEMENT_MODE
+    if identity_mode == "legacy" and entitlement_mode == "customer":
+        errors.append("PORTAL_ENTITLEMENT_MODE=customer 不能与 legacy 身份模式组合")
+    if identity_mode == "customer" and entitlement_mode != "customer":
+        errors.append("PORTAL_IDENTITY_MODE=customer 时权益读取也必须使用 customer")
 
     if errors:
         raise UnsafeProductionConfiguration("；".join(errors))

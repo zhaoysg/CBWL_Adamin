@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.api.v1.module_content.article.model import ContentModel
+from app.api.v1.module_identity.model import CustomerModel
 from app.api.v1.module_membership.entitlement import (
     EntitlementContext,
     EntitlementDecision,
@@ -17,15 +18,15 @@ from app.api.v1.module_membership.entitlement import (
     as_utc,
     count_active_members,
     evaluate_content_access,
-    load_entitlement_context,
     utc_now,
 )
 from app.api.v1.module_membership.plan.model import MemberPlanModel
 from app.api.v1.module_system.user.model import UserModel
 from app.common.enums import RET
-from app.core.base_schema import AuthSchema
 from app.core.exceptions import CustomException
 
+from .entitlement import load_portal_entitlement_context
+from .principal import PortalPrincipal
 from .schema import (
     AcademyResponse,
     Author,
@@ -51,22 +52,25 @@ class DatabasePortalService:
     def __init__(
         self,
         db: AsyncSession,
-        auth: AuthSchema | None,
+        principal: PortalPrincipal,
         *,
         now: datetime | None = None,
     ) -> None:
         self.db = db
-        self.auth = auth
+        self.principal = principal
+        self.auth = principal.auth
         self.now = as_utc(now or utc_now())
         self._context: EntitlementContext | None = None
         self._user: UserModel | None = None
+        self._customer: CustomerModel | None = None
 
     @property
     def user_id(self) -> int | None:
-        user_id = self.auth.user.id if self.auth is not None else None
-        if user_id is None or user_id <= 0:
-            return None
-        return user_id
+        return self.principal.legacy_user_id
+
+    @property
+    def customer_id(self) -> int | None:
+        return self.principal.customer_id
 
     async def home(self) -> HomeResponse:
         context = await self._entitlement_context()
@@ -87,7 +91,6 @@ class DatabasePortalService:
         )
 
     async def academy(self) -> AcademyResponse:
-        # 课程、专栏和直播域尚未落库时返回真实空态，禁止用演示数据伪装生产内容。
         return AcademyResponse(
             live_sessions=[],
             columns=[],
@@ -99,7 +102,10 @@ class DatabasePortalService:
         context = await self._require_authenticated_context()
         member = await self._member_summary(context)
         if member is None:
-            raise CustomException(msg="用户不存在", status_code=RET.NOT_FOUND.code)
+            raise CustomException(
+                msg="用户不存在",
+                status_code=RET.NOT_FOUND.code,
+            )
 
         return ProfileResponse(
             member=member,
@@ -115,12 +121,12 @@ class DatabasePortalService:
             assets=[],
         )
 
-    async def content_detail(self, content_id: int) -> ContentDetailResponse | None:
-        """Backward-compatible strict detail endpoint.
+    async def content_detail(
+        self,
+        content_id: int,
+    ) -> ContentDetailResponse | None:
+        """Backward-compatible strict detail endpoint."""
 
-        Existing clients continue receiving 401/403 for protected content. The independent H5
-        uses ``content_preview`` so guests can receive safe public metadata without the body.
-        """
         content = await self._published_content(content_id)
         if content is None:
             return None
@@ -128,16 +134,22 @@ class DatabasePortalService:
         self._raise_content_denied(decision)
         return self._content_response(content, decision)
 
-    async def content_preview(self, content_id: int) -> ContentDetailResponse | None:
-        """Return safe metadata to guests and the complete body only when authorized."""
+    async def content_preview(
+        self,
+        content_id: int,
+    ) -> ContentDetailResponse | None:
+        """Return public metadata and the body only when authorized."""
+
         content = await self._published_content(content_id)
         if content is None:
             return None
         decision = await self._content_decision(content)
         return self._content_response(content, decision)
 
-    async def course_detail(self, course_id: int) -> CourseDetailResponse | None:
-        # 课程域尚未落库时不伪造生产数据；完成课程模型后在此接入。
+    async def course_detail(
+        self,
+        course_id: int,
+    ) -> CourseDetailResponse | None:
         return None
 
     async def member_center(self) -> MemberCenterResponse:
@@ -156,7 +168,10 @@ class DatabasePortalService:
             )
         )
         plans = result.scalars().all()
-        highest_rank = max((item.rank for item in plans), default=None)
+        highest_rank = max(
+            (item.rank for item in plans),
+            default=None,
+        )
         return MemberCenterResponse(
             member=member,
             current_benefits=self._active_benefits(context),
@@ -171,13 +186,17 @@ class DatabasePortalService:
                     price=item.price,
                     original_price=None,
                     benefits=list(item.benefits or []),
-                    recommended=highest_rank is not None and item.rank == highest_rank,
+                    recommended=(highest_rank is not None and item.rank == highest_rank),
                 )
                 for item in plans
             ],
         )
 
-    async def _published_contents(self, *, limit: int) -> list[ContentModel]:
+    async def _published_contents(
+        self,
+        *,
+        limit: int,
+    ) -> list[ContentModel]:
         result = await self.db.execute(
             select(ContentModel)
             .options(
@@ -200,7 +219,10 @@ class DatabasePortalService:
         )
         return list(result.scalars().unique().all())
 
-    async def _published_content(self, content_id: int) -> ContentModel | None:
+    async def _published_content(
+        self,
+        content_id: int,
+    ) -> ContentModel | None:
         result = await self.db.execute(
             select(ContentModel)
             .options(
@@ -217,7 +239,10 @@ class DatabasePortalService:
         )
         return result.scalars().unique().first()
 
-    async def _content_decision(self, content: ContentModel) -> EntitlementDecision:
+    async def _content_decision(
+        self,
+        content: ContentModel,
+    ) -> EntitlementDecision:
         context = await self._entitlement_context()
         return evaluate_content_access(
             access_level=content.access_level,
@@ -231,12 +256,12 @@ class DatabasePortalService:
         decision: EntitlementDecision,
     ) -> ContentDetailResponse:
         unlock_action, unlock_message = self._content_unlock_prompt(decision.failure)
-
-        # Locked users only receive public metadata. Reading time is derived from the summary,
-        # not the protected body, so response metadata does not leak hidden body length.
         reading_source = content.body if decision.can_access else content.summary or ""
         body_text = html.unescape(_TAG_RE.sub(" ", reading_source))
-        reading_minutes = max(1, min(1440, math.ceil(len(body_text.strip()) / 400)))
+        reading_minutes = max(
+            1,
+            min(1440, math.ceil(len(body_text.strip()) / 400)),
+        )
         return ContentDetailResponse(
             id=content.id,
             category=content.category.category_name,
@@ -258,7 +283,9 @@ class DatabasePortalService:
         )
 
     @staticmethod
-    def _raise_content_denied(decision: EntitlementDecision) -> None:
+    def _raise_content_denied(
+        decision: EntitlementDecision,
+    ) -> None:
         if decision.can_access:
             return
         if decision.failure == "login_required":
@@ -281,15 +308,17 @@ class DatabasePortalService:
 
     async def _entitlement_context(self) -> EntitlementContext:
         if self._context is None:
-            self._context = await load_entitlement_context(
+            self._context = await load_portal_entitlement_context(
                 self.db,
-                self.user_id,
+                self.principal,
                 now=self.now,
             )
         return self._context
 
-    async def _require_authenticated_context(self) -> EntitlementContext:
-        if self.user_id is None:
+    async def _require_authenticated_context(
+        self,
+    ) -> EntitlementContext:
+        if not self.principal.is_authenticated:
             raise CustomException(
                 msg="请登录后访问个人中心",
                 code=RET.UNAUTHORIZED.code,
@@ -310,14 +339,23 @@ class DatabasePortalService:
             )
         return self._user
 
+    async def _load_customer(self) -> CustomerModel | None:
+        if self.customer_id is None:
+            return None
+        if self._customer is None:
+            self._customer = await self.db.scalar(
+                select(CustomerModel).where(
+                    CustomerModel.id == self.customer_id,
+                    CustomerModel.status == "active",
+                    CustomerModel.is_deleted.is_(False),
+                )
+            )
+        return self._customer
+
     async def _member_summary(
         self,
         context: EntitlementContext,
     ) -> MemberSummary | None:
-        user = await self._load_user()
-        if user is None:
-            return None
-
         ranked = sorted(
             context.subscriptions,
             key=lambda item: (
@@ -328,22 +366,48 @@ class DatabasePortalService:
             reverse=True,
         )
         best = ranked[0] if ranked else None
-        latest_expiry = max((as_utc(item.expires_at) for item in ranked), default=None)
-        created_at = as_utc(user.created_time)
-        joined_days = max((self.now.date() - created_at.date()).days, 0)
+        latest_expiry = max(
+            (as_utc(item.expires_at) for item in ranked),
+            default=None,
+        )
+
+        if self.principal.actor_type == "customer":
+            customer = await self._load_customer()
+            if customer is None:
+                return None
+            created_at = as_utc(customer.created_time)
+            member_id = customer.id
+            nickname = customer.nickname
+            member_no = customer.customer_no
+        else:
+            user = await self._load_user()
+            if user is None:
+                return None
+            created_at = as_utc(user.created_time)
+            member_id = user.id
+            nickname = user.name or user.username
+            member_no = f"CW{user.id:08d}"
+
+        joined_days = max(
+            (self.now.date() - created_at.date()).days,
+            0,
+        )
         return MemberSummary(
-            id=user.id,
-            nickname=user.name or user.username,
-            level_name=best.plan.plan_name if best else "注册用户",
-            expire_date=latest_expiry.date() if latest_expiry else None,
-            member_no=f"CW{user.id:08d}",
+            id=member_id,
+            nickname=nickname,
+            level_name=(best.plan.plan_name if best else "注册用户"),
+            expire_date=(latest_expiry.date() if latest_expiry else None),
+            member_no=member_no,
             joined_days=joined_days,
             slogan="独立思考，持续学习，控制风险",
             is_member=bool(ranked),
             active_plan_codes=sorted({item.plan.plan_code for item in ranked}),
         )
 
-    def _active_benefits(self, context: EntitlementContext) -> list[str]:
+    def _active_benefits(
+        self,
+        context: EntitlementContext,
+    ) -> list[str]:
         result: list[str] = []
         seen: set[str] = set()
         subscriptions = sorted(

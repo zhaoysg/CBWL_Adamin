@@ -17,27 +17,65 @@ from app.core.redis_crud import RedisCURD
 from app.core.security import OptionalOAuth2Schema, decode_access_token
 
 from .customer_auth import PortalCustomerAuthService
+from .principal import PortalPrincipal
 
 
-async def get_optional_portal_user(
+async def get_optional_portal_principal(
     db: Annotated[AsyncSession, Depends(db_getter)],
     redis: Annotated[Redis, Depends(redis_getter)],
     token: Annotated[str | None, Depends(OptionalOAuth2Schema)],
-) -> AuthSchema | None:
+) -> PortalPrincipal:
     if not token:
-        return None
+        return PortalPrincipal.anonymous()
+
     session = await _validate_portal_access_token(
         redis=redis,
         token=token,
     )
-    if _session_actor(session) == "customer":
+    actor = _session_actor(session)
+    if actor == "customer":
         await PortalCustomerAuthService.validate_session(db, session)
-    return await _authenticate(
+
+    auth = await _authenticate(
         token,
         db,
         redis,
         allow_portal_session=True,
     )
+    legacy_user_id = _positive_id(
+        session.get("legacy_user_id") or session.get("user_id"),
+        field_name="legacy_user_id",
+    )
+    if actor == "legacy":
+        return PortalPrincipal(
+            actor_type="legacy",
+            auth=auth,
+            legacy_user_id=legacy_user_id,
+        )
+    return PortalPrincipal(
+        actor_type="customer",
+        auth=auth,
+        legacy_user_id=legacy_user_id,
+        customer_id=_positive_id(
+            session.get("customer_id"),
+            field_name="customer_id",
+        ),
+        subject_id=_positive_id(
+            session.get("subject_id"),
+            field_name="subject_id",
+        ),
+    )
+
+
+async def get_optional_portal_user(
+    principal: Annotated[
+        PortalPrincipal,
+        Depends(get_optional_portal_principal),
+    ],
+) -> AuthSchema | None:
+    """Compatibility dependency for code not yet migrated to PortalPrincipal."""
+
+    return principal.auth
 
 
 async def get_current_portal_user(
@@ -131,4 +169,26 @@ def _session_actor(session: dict[str, Any]) -> str:
     return actor
 
 
-__all__ = ["get_current_portal_user", "get_optional_portal_user"]
+def _positive_id(value: Any, *, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CustomException(
+            msg="客户会话已失效",
+            code=RET.UNAUTHORIZED.code,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        ) from exc
+    if parsed <= 0:
+        raise CustomException(
+            msg=f"客户会话字段无效: {field_name}",
+            code=RET.UNAUTHORIZED.code,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+    return parsed
+
+
+__all__ = [
+    "get_current_portal_user",
+    "get_optional_portal_principal",
+    "get_optional_portal_user",
+]
