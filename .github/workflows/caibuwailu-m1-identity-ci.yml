@@ -1,0 +1,251 @@
+name: 财不外露 M1 身份域 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m1-customer-identity
+    paths:
+      - "backend/app/api/v1/module_identity/**"
+      - "backend/app/alembic/versions/20260902_01_identity_boundary.py"
+      - "backend/tests/test_identity_boundary.py"
+      - ".github/workflows/caibuwailu-m1-identity-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/api/v1/module_identity/**"
+      - "backend/app/alembic/versions/20260902_01_identity_boundary.py"
+      - "backend/tests/test_identity_boundary.py"
+      - ".github/workflows/caibuwailu-m1-identity-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m1-identity-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity-quality:
+    name: Identity model, transaction and security gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile identity files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_identity
+          app/alembic/versions/20260902_01_identity_boundary.py
+          tests/test_identity_boundary.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_identity
+          app/alembic/versions/20260902_01_identity_boundary.py
+          tests/test_identity_boundary.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_identity
+          app/alembic/versions/20260902_01_identity_boundary.py
+          tests/test_identity_boundary.py
+
+      - name: Security scan identity boundary
+        run: uvx bandit -q -r app/api/v1/module_identity
+
+      - name: Run identity contracts
+        run: uv run pytest -q tests/test_identity_boundary.py
+
+      - name: Verify MySQL-safe realm foreign-key metadata
+        run: |
+          uv run python - <<'PY'
+          from app.api.v1.module_identity.model import (
+              AdminAccountModel,
+              AuthIdentityModel,
+              CustomerModel,
+          )
+
+          expected = {
+              AuthIdentityModel: "fk_auth_identity_subject_realm",
+              AdminAccountModel: "fk_sys_admin_account_subject_realm",
+              CustomerModel: "fk_cw_customer_subject_realm",
+          }
+          for model, constraint_name in expected.items():
+              constraint = next(
+                  item
+                  for item in model.__table__.foreign_key_constraints
+                  if item.name == constraint_name
+              )
+              assert constraint.ondelete is None
+              assert constraint.onupdate is None
+          PY
+
+  mysql-identity-roundtrip:
+    name: MySQL 8.4 identity upgrade, downgrade and re-upgrade
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE IF NOT EXISTS sys_user "
+                      "(id INT PRIMARY KEY) ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: |
+          test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through identity head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify identity tables and model columns
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.config.setting import settings
+
+          expected = {
+              "auth_subject",
+              "auth_identity",
+              "sys_admin_account",
+              "cw_customer",
+          }
+          model_columns = {
+              "id",
+              "uuid",
+              "is_deleted",
+              "created_time",
+              "updated_time",
+              "deleted_time",
+          }
+
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT 1")) == 1
+              inspector = inspect(connection)
+              tables = set(inspector.get_table_names())
+              assert expected <= tables, expected - tables
+              for table in expected:
+                  columns = {item["name"] for item in inspector.get_columns(table)}
+                  assert model_columns <= columns, (table, model_columns - columns)
+          engine.dispose()
+          PY
+
+      - name: Downgrade identity migration
+        run: uv run alembic -c alembic.ini downgrade 20260823_01
+
+      - name: Verify identity tables were removed
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          from app.config.setting import settings
+
+          removed = {
+              "auth_subject",
+              "auth_identity",
+              "sys_admin_account",
+              "cw_customer",
+          }
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              tables = set(inspect(connection).get_table_names())
+              assert not (removed & tables), removed & tables
+          engine.dispose()
+          PY
+
+      - name: Re-upgrade identity migration
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify re-upgraded identity head
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.config.setting import settings
+
+          expected = {
+              "auth_subject",
+              "auth_identity",
+              "sys_admin_account",
+              "cw_customer",
+          }
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              assert connection.scalar(text("SELECT 1")) == 1
+              assert expected <= set(inspect(connection).get_table_names())
+          engine.dispose()
+          PY
