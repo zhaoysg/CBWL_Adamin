@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.config.path_conf import ENV_DIR
 
+PortalIdentityMode = Literal["legacy", "dual", "customer"]
+
 
 class PortalAuthSettings(BaseSettings):
     """H5 Portal authentication settings isolated from administration login."""
@@ -25,6 +27,7 @@ class PortalAuthSettings(BaseSettings):
     ALLOWED_ORIGINS: str = ""
     ALLOWED_LOGIN_TYPES: str = "H5,移动端"
     ALLOW_SUPERUSER_LOGIN: bool = False
+    IDENTITY_MODE: PortalIdentityMode = "legacy"
 
     REFRESH_COOKIE_NAME: str = "cbwl_portal_refresh"
     REFRESH_COOKIE_PATH: str = "/"
@@ -48,15 +51,25 @@ class PortalAuthSettings(BaseSettings):
             parsed = urlsplit(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ValueError(f"Portal Origin 无效: {origin}")
-            if parsed.username or parsed.password or parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
-                raise ValueError(f"Portal Origin 只能包含协议、主机和端口: {origin}")
+            if (
+                parsed.username
+                or parsed.password
+                or parsed.path not in {"", "/"}
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError(
+                    f"Portal Origin 只能包含协议、主机和端口: {origin}"
+                )
         return value
 
     @field_validator("REFRESH_COOKIE_NAME")
     @classmethod
     def validate_cookie_name(cls, value: str) -> str:
         normalized = value.strip()
-        if not normalized or any(char in normalized for char in " ;,=\t\r\n"):
+        if not normalized or any(
+            char in normalized for char in " ;,=\t\r\n"
+        ):
             raise ValueError("Portal Refresh Cookie 名称无效")
         return normalized
 
@@ -64,17 +77,27 @@ class PortalAuthSettings(BaseSettings):
     @classmethod
     def validate_cookie_path(cls, value: str) -> str:
         normalized = value.strip()
-        if not normalized.startswith("/") or any(char in normalized for char in ";\r\n"):
+        if not normalized.startswith("/") or any(
+            char in normalized for char in ";\r\n"
+        ):
             raise ValueError("Portal Refresh Cookie Path 无效")
         return normalized
 
     @property
     def allowed_origins(self) -> tuple[str, ...]:
-        return tuple(_canonical_origin(item) for item in self.ALLOWED_ORIGINS.split(",") if item.strip())
+        return tuple(
+            _canonical_origin(item)
+            for item in self.ALLOWED_ORIGINS.split(",")
+            if item.strip()
+        )
 
     @property
     def allowed_login_types(self) -> frozenset[str]:
-        return frozenset(item.strip() for item in self.ALLOWED_LOGIN_TYPES.split(",") if item.strip())
+        return frozenset(
+            item.strip()
+            for item in self.ALLOWED_LOGIN_TYPES.split(",")
+            if item.strip()
+        )
 
 
 def _canonical_origin(raw: str) -> str:
@@ -83,7 +106,9 @@ def _canonical_origin(raw: str) -> str:
     if not host:
         raise ValueError("Origin 缺少主机名")
     port = parsed.port
-    default_port = (parsed.scheme == "https" and port == 443) or (parsed.scheme == "http" and port == 80)
+    default_port = (parsed.scheme == "https" and port == 443) or (
+        parsed.scheme == "http" and port == 80
+    )
     port_suffix = "" if port is None or default_port else f":{port}"
     return f"{parsed.scheme.lower()}://{host}{port_suffix}"
 
@@ -95,4 +120,9 @@ def get_portal_auth_settings() -> PortalAuthSettings:
 
 portal_auth_settings = get_portal_auth_settings()
 
-__all__ = ["PortalAuthSettings", "_canonical_origin", "portal_auth_settings"]
+__all__ = [
+    "PortalAuthSettings",
+    "PortalIdentityMode",
+    "_canonical_origin",
+    "portal_auth_settings",
+]
