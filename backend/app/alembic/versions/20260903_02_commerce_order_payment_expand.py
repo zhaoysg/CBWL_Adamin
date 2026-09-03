@@ -18,6 +18,7 @@ depends_on: str | Sequence[str] | None = None
 _MYSQL_OPTIONS = {
     "mysql_engine": "InnoDB",
     "mysql_charset": "utf8mb4",
+    "mysql_collate": "utf8mb4_bin",
 }
 
 
@@ -47,6 +48,21 @@ def _model_columns() -> list[sa.Column]:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("uuid"),
     ]
+
+
+def _base_indexes(table_name: str) -> None:
+    op.create_index(
+        f"ix_{table_name}_is_deleted",
+        table_name,
+        ["is_deleted"],
+        unique=False,
+    )
+    op.create_index(
+        f"ix_{table_name}_created_time",
+        table_name,
+        ["created_time"],
+        unique=False,
+    )
 
 
 def upgrade() -> None:
@@ -107,22 +123,16 @@ def upgrade() -> None:
             ["legacy_user_id"],
             ["sys_user.id"],
             name="fk_cw_order_legacy_user",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["customer_id"],
             ["cw_customer.id"],
             name="fk_cw_order_customer",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["plan_id"],
             ["cw_member_plan.id"],
             name="fk_cw_order_plan",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.UniqueConstraint("order_no", name="uq_cw_order_no"),
         sa.UniqueConstraint(
@@ -132,6 +142,7 @@ def upgrade() -> None:
         comment="财不外露客户订单",
         **_MYSQL_OPTIONS,
     )
+    _base_indexes("cw_order")
     op.create_index(
         "ix_cw_order_legacy_status_created",
         "cw_order",
@@ -150,8 +161,6 @@ def upgrade() -> None:
         ["status", "payment_expires_at", "id"],
         unique=False,
     )
-    op.create_index("ix_cw_order_is_deleted", "cw_order", ["is_deleted"], unique=False)
-    op.create_index("ix_cw_order_created_time", "cw_order", ["created_time"], unique=False)
 
     op.create_table(
         "cw_payment_attempt",
@@ -197,12 +206,14 @@ def upgrade() -> None:
             "status <> 'succeeded' OR succeeded_at IS NOT NULL",
             name="ck_cw_payment_attempt_succeeded_shape",
         ),
+        sa.CheckConstraint(
+            "status NOT IN ('failed', 'closed') OR failed_at IS NOT NULL",
+            name="ck_cw_payment_attempt_failed_shape",
+        ),
         sa.ForeignKeyConstraint(
             ["order_id"],
             ["cw_order.id"],
             name="fk_cw_payment_attempt_order",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.UniqueConstraint("attempt_no", name="uq_cw_payment_attempt_no"),
         sa.UniqueConstraint(
@@ -223,6 +234,7 @@ def upgrade() -> None:
         comment="财不外露订单支付尝试",
         **_MYSQL_OPTIONS,
     )
+    _base_indexes("cw_payment_attempt")
     op.create_index(
         "ix_cw_payment_attempt_order_status",
         "cw_payment_attempt",
@@ -233,18 +245,6 @@ def upgrade() -> None:
         "ix_cw_payment_attempt_provider_status_created",
         "cw_payment_attempt",
         ["provider", "status", "created_time", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_attempt_is_deleted",
-        "cw_payment_attempt",
-        ["is_deleted"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_attempt_created_time",
-        "cw_payment_attempt",
-        ["created_time"],
         unique=False,
     )
 
@@ -292,15 +292,11 @@ def upgrade() -> None:
             ["order_id"],
             ["cw_order.id"],
             name="fk_cw_payment_event_order",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["payment_attempt_id"],
             ["cw_payment_attempt.id"],
             name="fk_cw_payment_event_attempt",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         sa.UniqueConstraint(
             "provider",
@@ -310,6 +306,7 @@ def upgrade() -> None:
         comment="财不外露规范化支付事件",
         **_MYSQL_OPTIONS,
     )
+    _base_indexes("cw_payment_event")
     op.create_index(
         "ix_cw_payment_event_order_received",
         "cw_payment_event",
@@ -326,18 +323,6 @@ def upgrade() -> None:
         "ix_cw_payment_event_processing",
         "cw_payment_event",
         ["processing_status", "processed_at", "id"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_event_is_deleted",
-        "cw_payment_event",
-        ["is_deleted"],
-        unique=False,
-    )
-    op.create_index(
-        "ix_cw_payment_event_created_time",
-        "cw_payment_event",
-        ["created_time"],
         unique=False,
     )
 
