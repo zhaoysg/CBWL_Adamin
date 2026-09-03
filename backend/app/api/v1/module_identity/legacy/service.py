@@ -33,9 +33,7 @@ def classify_legacy_candidate(
     if already_mapped:
         return LegacyCandidateDisposition.ALREADY_MAPPED, ()
     if identifier_conflict:
-        return LegacyCandidateDisposition.IDENTIFIER_CONFLICT, (
-            "customer_identifier_conflict",
-        )
+        return LegacyCandidateDisposition.IDENTIFIER_CONFLICT, ("customer_identifier_conflict",)
 
     reasons: list[str] = []
     if is_superuser:
@@ -100,9 +98,7 @@ class LegacyCustomerMigrationPlanner:
             (
                 await db.scalars(
                     select(LegacyCustomerMapModel.legacy_sys_user_id).where(
-                        LegacyCustomerMapModel.legacy_sys_user_id.in_(
-                            legacy_user_ids
-                        ),
+                        LegacyCustomerMapModel.legacy_sys_user_id.in_(legacy_user_ids),
                         LegacyCustomerMapModel.is_deleted.is_(False),
                     )
                 )
@@ -128,9 +124,7 @@ class LegacyCustomerMigrationPlanner:
                     select(AuthIdentityModel.identifier_normalized).where(
                         AuthIdentityModel.realm == IdentityRealm.CUSTOMER,
                         AuthIdentityModel.provider == IdentityProvider.PASSWORD,
-                        AuthIdentityModel.identifier_normalized.in_(
-                            normalized_identifiers
-                        ),
+                        AuthIdentityModel.identifier_normalized.in_(normalized_identifiers),
                         AuthIdentityModel.is_deleted.is_(False),
                     )
                 )
@@ -168,8 +162,6 @@ class LegacyCustomerMigrationPlanner:
             eligible=counts[LegacyCandidateDisposition.ELIGIBLE],
             claim_required=counts[LegacyCandidateDisposition.CLAIM_REQUIRED],
             already_mapped=counts[LegacyCandidateDisposition.ALREADY_MAPPED],
-            identifier_conflict=counts[
-                LegacyCandidateDisposition.IDENTIFIER_CONFLICT
-            ],
+            identifier_conflict=counts[LegacyCandidateDisposition.IDENTIFIER_CONFLICT],
             candidates=candidates,
         )
