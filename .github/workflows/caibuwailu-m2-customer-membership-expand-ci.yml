@@ -1,0 +1,293 @@
+name: 财不外露 M2 客户会员扩展 CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/m2-customer-membership-expand
+    paths:
+      - "backend/app/api/v1/module_identity/legacy/**"
+      - "backend/app/api/v1/module_membership/subscription/model.py"
+      - "backend/app/alembic/versions/20260903_01_customer_membership_expand.py"
+      - "backend/tests/test_customer_membership_expand.py"
+      - ".github/workflows/caibuwailu-m2-customer-membership-expand-ci.yml"
+  pull_request:
+    paths:
+      - "backend/app/api/v1/module_identity/legacy/**"
+      - "backend/app/api/v1/module_membership/subscription/model.py"
+      - "backend/app/alembic/versions/20260903_01_customer_membership_expand.py"
+      - "backend/tests/test_customer_membership_expand.py"
+      - ".github/workflows/caibuwailu-m2-customer-membership-expand-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: caibuwailu-m2-customer-membership-expand-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  expand-quality:
+    name: Expand model, planner and safety contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Compile changed files
+        run: >-
+          uv run python -m compileall -q
+          app/api/v1/module_identity/legacy
+          app/api/v1/module_membership/subscription/model.py
+          app/alembic/versions/20260903_01_customer_membership_expand.py
+          tests/test_customer_membership_expand.py
+
+      - name: Ruff lint
+        run: >-
+          uv run ruff check --no-fix
+          app/api/v1/module_identity/legacy
+          app/api/v1/module_membership/subscription/model.py
+          app/alembic/versions/20260903_01_customer_membership_expand.py
+          tests/test_customer_membership_expand.py
+
+      - name: Ruff format check
+        run: >-
+          uv run ruff format --check
+          app/api/v1/module_identity/legacy
+          app/api/v1/module_membership/subscription/model.py
+          app/alembic/versions/20260903_01_customer_membership_expand.py
+          tests/test_customer_membership_expand.py
+
+      - name: Security scan migration planner
+        run: uvx bandit -q -r app/api/v1/module_identity/legacy
+
+      - name: Run expand contracts
+        run: uv run pytest -q tests/test_customer_membership_expand.py
+
+  mysql-expand-roundtrip:
+    name: MySQL 8.4 expand, legacy compatibility and rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: caibuwailu
+          MYSQL_USER: caibuwailu
+          MYSQL_PASSWORD: caibuwailu-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      ENVIRONMENT: dev
+      DATABASE_TYPE: mysql
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: 3306
+      DATABASE_USER: caibuwailu
+      DATABASE_PASSWORD: caibuwailu-ci
+      DATABASE_NAME: caibuwailu
+      SECRET_KEY: ci-only-secret-key-not-for-production
+      REDIS_HOST: 127.0.0.1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --frozen
+
+      - name: Create existing system user fixture
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              connection.execute(
+                  text(
+                      "CREATE TABLE IF NOT EXISTS sys_user "
+                      "(id INT PRIMARY KEY) ENGINE=InnoDB"
+                  )
+              )
+          engine.dispose()
+          PY
+
+      - name: Require a single Alembic head
+        run: test "$(uv run alembic -c alembic.ini heads | wc -l)" -eq 1
+
+      - name: Upgrade through expand head
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify expand schema and legacy-compatible data path
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.begin() as connection:
+              inspector = inspect(connection)
+              assert "cw_customer_legacy_map" in inspector.get_table_names()
+              columns = {
+                  column["name"]: column
+                  for column in inspector.get_columns("cw_member_subscription")
+              }
+              assert columns["user_id"]["nullable"] is False
+              assert columns["customer_id"]["nullable"] is True
+              foreign_keys = {
+                  item["name"]: item
+                  for item in inspector.get_foreign_keys("cw_member_subscription")
+              }
+              assert "fk_cw_member_subscription_customer" in foreign_keys
+              indexes = {
+                  item["name"]
+                  for item in inspector.get_indexes("cw_member_subscription")
+              }
+              assert "ix_cw_member_subscription_customer_window" in indexes
+
+              connection.execute(text("INSERT INTO sys_user (id) VALUES (101)"))
+              connection.execute(
+                  text(
+                      "INSERT INTO cw_member_plan "
+                      "(id, uuid, is_deleted, created_time, updated_time, "
+                      "plan_code, plan_name, level_no, price, currency, "
+                      "duration_days, benefits, status, sort_no) VALUES "
+                      "(201, 'plan-201', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), "
+                      "'PLAN201', 'Plan 201', 1, 0, 'CNY', 30, JSON_ARRAY(), 0, 0)"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "INSERT INTO cw_member_subscription "
+                      "(id, uuid, is_deleted, created_time, updated_time, "
+                      "user_id, plan_id, source, source_ref, status, starts_at, "
+                      "expires_at, grant_reason, version_no) VALUES "
+                      "(301, 'subscription-301', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), "
+                      "101, 201, 'migration', 'legacy-301', 0, UTC_TIMESTAMP(), "
+                      "DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY), 'CI legacy row', 1)"
+                  )
+              )
+              row = connection.execute(
+                  text(
+                      "SELECT user_id, customer_id FROM cw_member_subscription "
+                      "WHERE id = 301"
+                  )
+              ).one()
+              assert row.user_id == 101
+              assert row.customer_id is None
+
+              connection.execute(
+                  text(
+                      "INSERT INTO auth_subject "
+                      "(id, uuid, is_deleted, created_time, updated_time, realm, status, version_no) "
+                      "VALUES (401, 'subject-401', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), "
+                      "'customer', 'active', 1)"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "INSERT INTO cw_customer "
+                      "(id, uuid, is_deleted, created_time, updated_time, subject_id, realm, "
+                      "customer_no, nickname, register_source, status, version_no) VALUES "
+                      "(501, 'customer-501', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), 401, "
+                      "'customer', 'CLEGACY000000101', 'Legacy 101', 'migration', 'active', 1)"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "INSERT INTO cw_customer_legacy_map "
+                      "(id, uuid, is_deleted, created_time, updated_time, legacy_sys_user_id, "
+                      "customer_id, credential_state, source, identifier_snapshot, migrated_at, version_no) "
+                      "VALUES (601, 'legacy-map-601', 0, UTC_TIMESTAMP(), UTC_TIMESTAMP(), "
+                      "101, 501, 'claim_required', 'membership', 'legacy-101', UTC_TIMESTAMP(), 1)"
+                  )
+              )
+              connection.execute(
+                  text(
+                      "UPDATE cw_member_subscription SET customer_id = 501 WHERE id = 301"
+                  )
+              )
+              row = connection.execute(
+                  text(
+                      "SELECT user_id, customer_id FROM cw_member_subscription "
+                      "WHERE id = 301"
+                  )
+              ).one()
+              assert (row.user_id, row.customer_id) == (101, 501)
+          engine.dispose()
+          PY
+
+      - name: Downgrade expand migration
+        run: uv run alembic -c alembic.ini downgrade 20260902_01
+
+      - name: Verify rollback preserves legacy membership ownership
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect, text
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              inspector = inspect(connection)
+              assert "cw_customer_legacy_map" not in inspector.get_table_names()
+              columns = {
+                  column["name"]
+                  for column in inspector.get_columns("cw_member_subscription")
+              }
+              assert "customer_id" not in columns
+              assert "user_id" in columns
+              assert connection.scalar(
+                  text("SELECT user_id FROM cw_member_subscription WHERE id = 301")
+              ) == 101
+          engine.dispose()
+          PY
+
+      - name: Re-upgrade expand migration
+        run: uv run alembic -c alembic.ini upgrade head
+
+      - name: Verify re-upgraded expand head
+        run: |
+          uv run python - <<'PY'
+          from sqlalchemy import create_engine, inspect
+          from app.config.setting import settings
+
+          engine = create_engine(settings.DB_URI)
+          with engine.connect() as connection:
+              inspector = inspect(connection)
+              assert "cw_customer_legacy_map" in inspector.get_table_names()
+              columns = {
+                  column["name"]: column
+                  for column in inspector.get_columns("cw_member_subscription")
+              }
+              assert columns["customer_id"]["nullable"] is True
+          engine.dispose()
+          PY
