@@ -64,11 +64,6 @@ def _create_model_indexes(table_name: str) -> None:
     )
 
 
-def _drop_model_indexes(table_name: str) -> None:
-    op.drop_index(f"ix_{table_name}_created_time", table_name=table_name)
-    op.drop_index(f"ix_{table_name}_is_deleted", table_name=table_name)
-
-
 def upgrade() -> None:
     op.create_table(
         "auth_subject",
@@ -319,18 +314,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    _drop_model_indexes("cw_customer")
-    op.drop_index("ix_cw_customer_status_created", table_name="cw_customer")
+    # Dropping a MySQL table removes its foreign keys and supporting indexes.
+    # Explicit index removal first fails while a foreign key still depends on it.
     op.drop_table("cw_customer")
-
-    _drop_model_indexes("sys_admin_account")
-    op.drop_index("ix_sys_admin_account_status", table_name="sys_admin_account")
     op.drop_table("sys_admin_account")
-
-    _drop_model_indexes("auth_identity")
-    op.drop_index("ix_auth_identity_subject", table_name="auth_identity")
     op.drop_table("auth_identity")
-
-    _drop_model_indexes("auth_subject")
-    op.drop_index("ix_auth_subject_realm_status", table_name="auth_subject")
     op.drop_table("auth_subject")
