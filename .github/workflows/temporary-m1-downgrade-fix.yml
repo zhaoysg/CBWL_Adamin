@@ -1,0 +1,65 @@
+name: Temporary M1 downgrade fix
+
+on:
+  push:
+    branches:
+      - feature/m1-customer-identity
+    paths:
+      - ".github/workflows/temporary-m1-downgrade-fix.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/m1-customer-identity
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v6
+
+      - working-directory: backend
+        run: uv sync --frozen
+
+      - name: Make table removal own its indexes and constraints
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/alembic/versions/20260902_01_identity_boundary.py")
+          text = path.read_text(encoding="utf-8")
+          helper_start = text.index("\ndef _drop_model_indexes")
+          upgrade_start = text.index("\ndef upgrade", helper_start)
+          text = text[:helper_start] + "\n" + text[upgrade_start:]
+          downgrade_start = text.index("\ndef downgrade() -> None:")
+          text = text[:downgrade_start] + '''
+
+def downgrade() -> None:
+    # Dropping a MySQL table removes its foreign keys and supporting indexes.
+    # Explicitly dropping those indexes first fails with error 1553 because
+    # they are still required by the table's composite foreign key.
+    op.drop_table("cw_customer")
+    op.drop_table("sys_admin_account")
+    op.drop_table("auth_identity")
+    op.drop_table("auth_subject")
+'''
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Apply repository Ruff formatter
+        working-directory: backend
+        run: uv run ruff format app/alembic/versions/20260902_01_identity_boundary.py
+
+      - name: Commit rollback fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/alembic/versions/20260902_01_identity_boundary.py
+          git commit -m "fix(identity): drop MySQL identity tables before indexes"
+          git push origin HEAD:feature/m1-customer-identity
