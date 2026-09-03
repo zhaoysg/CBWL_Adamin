@@ -59,7 +59,6 @@ class AuthSubjectModel(ModelMixin):
         "AuthIdentityModel",
         back_populates="subject",
         cascade="all, delete-orphan",
-        passive_deletes=True,
         lazy="raise",
     )
 
@@ -73,8 +72,6 @@ class AuthIdentityModel(ModelMixin):
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_auth_identity_subject_realm",
-            ondelete="CASCADE",
-            onupdate="CASCADE",
         ),
         UniqueConstraint(
             "realm",
@@ -165,8 +162,6 @@ class AdminAccountModel(ModelMixin):
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_sys_admin_account_subject_realm",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         UniqueConstraint("subject_id", name="uq_sys_admin_account_subject"),
         UniqueConstraint(
@@ -233,8 +228,6 @@ class CustomerModel(ModelMixin):
             ["subject_id", "realm"],
             ["auth_subject.id", "auth_subject.realm"],
             name="fk_cw_customer_subject_realm",
-            ondelete="RESTRICT",
-            onupdate="CASCADE",
         ),
         UniqueConstraint("subject_id", name="uq_cw_customer_subject"),
         UniqueConstraint("customer_no", name="uq_cw_customer_no"),
