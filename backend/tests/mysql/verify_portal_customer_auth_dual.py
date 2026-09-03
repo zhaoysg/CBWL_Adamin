@@ -4,7 +4,7 @@ import asyncio
 import json
 
 from fakeredis.aioredis import FakeRedis
-from sqlalchemy import select, text
+from sqlalchemy import text
 from starlette.requests import Request
 
 from app.api.v1.module_identity.legacy.migrator import (
@@ -88,11 +88,11 @@ async def _seed() -> tuple[str, str]:
                 "(2301, 'subscription-2301', 0, UTC_TIMESTAMP(), "
                 "UTC_TIMESTAMP(), 201, 2201, 'migration', 'dual-2301', 0, "
                 "UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY), "
-                "dual customer auth CI, 1), "
+                "'dual customer auth CI', 1), "
                 "(2302, 'subscription-2302', 0, UTC_TIMESTAMP(), "
                 "UTC_TIMESTAMP(), 202, 2201, 'migration', 'dual-2302', 0, "
                 "UTC_TIMESTAMP(), DATE_ADD(UTC_TIMESTAMP(), INTERVAL 30 DAY), "
-                "claim customer auth CI, 1)"
+                "'claim customer auth CI', 1)"
             )
         )
 
@@ -159,9 +159,10 @@ async def main() -> None:
     async with async_db_session() as db:
         await PortalCustomerAuthService.validate_session(db, session)
         customer_id = await db.scalar(
-            select(text("customer_id")).select_from(
-                text("cw_member_subscription")
-            ).where(text("id = 2301"))
+            text(
+                "SELECT customer_id FROM cw_member_subscription "
+                "WHERE id = 2301"
+            )
         )
         assert customer_id == account.customer_id
     await redis.aclose()
