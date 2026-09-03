@@ -70,6 +70,26 @@ class CommerceRepository:
             statement = statement.with_for_update()
         return await self.db.scalar(statement)
 
+    async def get_active_payment_attempt_for_order(
+        self,
+        order_id: int,
+        *,
+        for_update: bool = False,
+    ) -> PaymentAttemptModel | None:
+        statement = (
+            select(PaymentAttemptModel)
+            .where(
+                PaymentAttemptModel.order_id == order_id,
+                PaymentAttemptModel.status.in_(("created", "processing")),
+                PaymentAttemptModel.is_deleted.is_(False),
+            )
+            .order_by(PaymentAttemptModel.id)
+            .limit(1)
+        )
+        if for_update:
+            statement = statement.with_for_update()
+        return await self.db.scalar(statement)
+
     async def get_payment_attempt_by_merchant_request(
         self,
         *,
