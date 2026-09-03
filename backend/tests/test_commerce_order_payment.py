@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
@@ -8,7 +8,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select, text
 
-from app.api.v1.module_commerce.model import PaymentEventModel
+from app.api.v1.module_commerce.model import (
+    CommerceOrderModel,
+    PaymentAttemptModel,
+    PaymentEventModel,
+)
 from app.api.v1.module_commerce.schema import (
     CommerceOrderCancelSchema,
     CommerceOrderCreateSchema,
@@ -29,6 +33,36 @@ from app.core.exceptions import CustomException
 
 def _suffix() -> str:
     return uuid4().hex[:12]
+
+
+def _principal_for_user(
+    user: UserModel,
+    *,
+    customer: CustomerModel | None = None,
+    subject: AuthSubjectModel | None = None,
+) -> PortalPrincipal:
+    auth = AuthSchema(
+        user=CoreUserSchema(
+            id=user.id,
+            username=user.username,
+            name=user.name,
+            dept_id=None,
+            is_superuser=False,
+        )
+    )
+    if customer is None or subject is None:
+        return PortalPrincipal(
+            actor_type="legacy",
+            auth=auth,
+            legacy_user_id=user.id,
+        )
+    return PortalPrincipal(
+        actor_type="customer",
+        auth=auth,
+        legacy_user_id=user.id,
+        customer_id=customer.id,
+        subject_id=subject.id,
+    )
 
 
 async def _seed_customer_and_plans(db, suffix: str):
@@ -93,37 +127,37 @@ async def _seed_customer_and_plans(db, suffix: str):
     db.add_all([mapping, first_plan, second_plan])
     await db.flush()
 
-    auth = AuthSchema(
-        user=CoreUserSchema(
-            id=user.id,
-            username=user.username,
-            name=user.name,
-            dept_id=None,
-            is_superuser=False,
-        )
+    return (
+        _principal_for_user(user, customer=customer, subject=subject),
+        _principal_for_user(user),
+        subject,
+        first_plan,
+        second_plan,
     )
-    customer_principal = PortalPrincipal(
-        actor_type="customer",
-        auth=auth,
-        legacy_user_id=user.id,
-        customer_id=customer.id,
-        subject_id=subject.id,
+
+
+async def _seed_unmapped_legacy(db, suffix: str) -> PortalPrincipal:
+    user = UserModel(
+        username=f"legacy_commerce_{suffix}",
+        password="test-only-hash",
+        name=f"兼容用户{suffix[:5]}",
+        is_superuser=False,
+        status=0,
     )
-    legacy_principal = PortalPrincipal(
-        actor_type="legacy",
-        auth=auth,
-        legacy_user_id=user.id,
-    )
-    return customer_principal, legacy_principal, first_plan, second_plan
+    db.add(user)
+    await db.flush()
+    return _principal_for_user(user)
 
 
 @pytest.mark.asyncio
-async def test_order_amount_is_server_derived_and_creation_is_idempotent(
+async def test_order_amount_ownership_and_creation_idempotency(
     test_client: TestClient,
 ) -> None:
     suffix = _suffix()
     async with async_db_session() as db, db.begin():
-        customer, legacy, first_plan, second_plan = await _seed_customer_and_plans(db, suffix)
+        customer, mapped_legacy, subject, first_plan, second_plan = (
+            await _seed_customer_and_plans(db, suffix)
+        )
         service = CommerceService(db)
         key = f"order:{suffix}:0001"
         payload = CommerceOrderCreateSchema(
@@ -165,20 +199,34 @@ async def test_order_amount_is_server_derived_and_creation_is_idempotent(
         cancelled = await service.cancel_order(
             customer,
             first.id,
-            CommerceOrderCancelSchema(version_no=first.version_no, reason="客户主动取消"),
+            CommerceOrderCancelSchema(
+                version_no=first.version_no,
+                reason="客户主动取消",
+            ),
         )
         assert cancelled.status == "cancelled"
         assert cancelled.cancelled_at is not None
         assert cancelled.version_no == 2
 
+        with pytest.raises(CustomException) as migrated_legacy:
+            await service.create_order(
+                mapped_legacy,
+                CommerceOrderCreateSchema(
+                    plan_id=first_plan.id,
+                    idempotency_key=f"order:{suffix}:mapped-legacy",
+                ),
+            )
+        assert migrated_legacy.value.status_code == 409
+
+        unmapped_legacy = await _seed_unmapped_legacy(db, suffix)
         legacy_order = await service.create_order(
-            legacy,
+            unmapped_legacy,
             CommerceOrderCreateSchema(
                 plan_id=first_plan.id,
                 idempotency_key=f"order:{suffix}:legacy",
             ),
         )
-        assert legacy_order.legacy_user_id == legacy.legacy_user_id
+        assert legacy_order.legacy_user_id == unmapped_legacy.legacy_user_id
         assert legacy_order.customer_id is None
 
         inconsistent_principal = PortalPrincipal(
@@ -198,14 +246,26 @@ async def test_order_amount_is_server_derived_and_creation_is_idempotent(
             )
         assert inconsistent.value.status_code == 503
 
+        subject.status = "disabled"
+        await db.flush()
+        with pytest.raises(CustomException) as disabled_subject:
+            await service.create_order(
+                customer,
+                CommerceOrderCreateSchema(
+                    plan_id=first_plan.id,
+                    idempotency_key=f"order:{suffix}:disabled-subject",
+                ),
+            )
+        assert disabled_subject.value.status_code == 503
+
 
 @pytest.mark.asyncio
-async def test_payment_event_is_deduplicated_and_updates_order_atomically(
+async def test_payment_event_state_machine_late_delivery_and_savepoint_rollback(
     test_client: TestClient,
 ) -> None:
     suffix = _suffix()
     async with async_db_session() as db, db.begin():
-        customer, _, plan, _ = await _seed_customer_and_plans(db, suffix)
+        customer, _, _, plan, _ = await _seed_customer_and_plans(db, suffix)
         service = CommerceService(db)
         order = await service.create_order(
             customer,
@@ -214,29 +274,45 @@ async def test_payment_event_is_deduplicated_and_updates_order_atomically(
                 idempotency_key=f"order:{suffix}:payment",
             ),
         )
+        attempt_payload = PaymentAttemptCreateSchema(
+            provider="wechat",
+            idempotency_key=f"payment:{suffix}:0001",
+        )
         attempt = await service.create_payment_attempt(
             customer,
             order.id,
-            PaymentAttemptCreateSchema(
-                provider="wechat",
-                idempotency_key=f"payment:{suffix}:0001",
-            ),
+            attempt_payload,
         )
         repeated_attempt = await service.create_payment_attempt(
             customer,
             order.id,
-            PaymentAttemptCreateSchema(
-                provider="wechat",
-                idempotency_key=f"payment:{suffix}:0001",
-            ),
+            attempt_payload,
         )
         assert repeated_attempt.id == attempt.id
         assert attempt.amount == order.total_amount
         assert attempt.currency == order.currency
 
-        # SQLite is test-only in this project. Its standard function set does not
-        # include CHAR_LENGTH, while MySQL 8.4 enforces the named digest check in
-        # the dedicated integration job. Keep service behavior covered here.
+        with pytest.raises(CustomException) as changed_provider:
+            await service.create_payment_attempt(
+                customer,
+                order.id,
+                attempt_payload.model_copy(update={"provider": "alipay"}),
+            )
+        assert changed_provider.value.status_code == 409
+
+        with pytest.raises(CustomException) as second_active_attempt:
+            await service.create_payment_attempt(
+                customer,
+                order.id,
+                PaymentAttemptCreateSchema(
+                    provider="alipay",
+                    idempotency_key=f"payment:{suffix}:0002",
+                ),
+            )
+        assert second_active_attempt.value.status_code == 409
+
+        # SQLite is test-only here. MySQL 8.4 enforces the named CHAR_LENGTH
+        # and signature checks in the dedicated integration job.
         await db.execute(text("PRAGMA ignore_check_constraints = ON"))
 
         bad_amount = await service.record_verified_payment_event(
@@ -258,6 +334,19 @@ async def test_payment_event_is_deduplicated_and_updates_order_atomically(
         assert bad_amount.order.status == "pending"
         assert bad_amount.payment_attempt.status == "created"
 
+        order_model = await db.scalar(
+            select(CommerceOrderModel).where(CommerceOrderModel.id == order.id)
+        )
+        attempt_model = await db.scalar(
+            select(PaymentAttemptModel).where(PaymentAttemptModel.id == attempt.id)
+        )
+        assert order_model is not None
+        assert attempt_model is not None
+        expired_at = datetime.now(UTC) - timedelta(minutes=1)
+        order_model.payment_expires_at = expired_at
+        attempt_model.expires_at = expired_at
+        await db.flush()
+
         success_payload = VerifiedPaymentEventSchema(
             provider="wechat",
             provider_event_id=f"event-success-{suffix}",
@@ -268,7 +357,7 @@ async def test_payment_event_is_deduplicated_and_updates_order_atomically(
             currency=order.currency,
             signature_verified=True,
             payload_digest="a" * 64,
-            occurred_at=datetime.now(UTC),
+            occurred_at=expired_at - timedelta(seconds=1),
         )
         paid = await service.record_verified_payment_event(success_payload)
         assert paid.event.processing_status == "accepted"
@@ -321,6 +410,65 @@ async def test_payment_event_is_deduplicated_and_updates_order_atomically(
                 ),
             )
         assert cancel_paid.value.status_code == 409
+
+        second_order = await service.create_order(
+            customer,
+            CommerceOrderCreateSchema(
+                plan_id=plan.id,
+                idempotency_key=f"order:{suffix}:provider-tx-conflict",
+            ),
+        )
+        second_attempt = await service.create_payment_attempt(
+            customer,
+            second_order.id,
+            PaymentAttemptCreateSchema(
+                provider="wechat",
+                idempotency_key=f"payment:{suffix}:provider-tx-conflict",
+            ),
+        )
+        conflicting_event_id = f"event-provider-tx-conflict-{suffix}"
+        with pytest.raises(CustomException) as provider_transaction_conflict:
+            await service.record_verified_payment_event(
+                VerifiedPaymentEventSchema(
+                    provider="wechat",
+                    provider_event_id=conflicting_event_id,
+                    merchant_request_no=second_attempt.merchant_request_no,
+                    provider_transaction_id=paid.payment_attempt.provider_transaction_id,
+                    event_type="payment_succeeded",
+                    amount=second_order.total_amount,
+                    currency=second_order.currency,
+                    signature_verified=True,
+                    payload_digest="d" * 64,
+                    occurred_at=datetime.now(UTC),
+                )
+            )
+        assert provider_transaction_conflict.value.status_code == 409
+
+        conflict_event_count = await db.scalar(
+            select(func.count())
+            .select_from(PaymentEventModel)
+            .where(PaymentEventModel.provider_event_id == conflicting_event_id)
+        )
+        assert conflict_event_count == 0
+
+        recovered = await service.record_verified_payment_event(
+            VerifiedPaymentEventSchema(
+                provider="wechat",
+                provider_event_id=f"event-recovered-{suffix}",
+                merchant_request_no=second_attempt.merchant_request_no,
+                provider_transaction_id=None,
+                event_type="payment_failed",
+                amount=second_order.total_amount,
+                currency=second_order.currency,
+                signature_verified=True,
+                payload_digest="e" * 64,
+                occurred_at=datetime.now(UTC),
+                provider_reason_code="declined",
+            )
+        )
+        assert recovered.event.processing_status == "accepted"
+        assert recovered.order.status == "pending"
+        assert recovered.payment_attempt.status == "failed"
 
         subscriptions = await db.scalar(
             select(func.count())
