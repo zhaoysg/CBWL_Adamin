@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from datetime import timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime, timedelta
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.module_identity.legacy.model import LegacyCustomerMapModel
+from app.api.v1.module_identity.model import AuthSubjectModel, CustomerModel
 from app.api.v1.module_membership.entitlement import as_utc, utc_now
 from app.api.v1.module_membership.plan.model import MemberPlanModel
 from app.api.v1.module_portal.principal import PortalPrincipal
@@ -34,9 +35,9 @@ _CENT = Decimal("0.01")
 class CommerceService:
     """Order and normalized payment transitions inside a caller-owned transaction.
 
-    The service never commits or rolls back the outer transaction. Unique keys
-    arbitrate concurrent idempotent requests through savepoints; all aggregate
-    state changes are flushed atomically with the normalized payment event.
+    The service never commits or rolls back the outer transaction. Database
+    uniqueness arbitrates idempotent races through savepoints, while aggregate
+    mutations follow a stable order -> payment-attempt lock order.
     """
 
     PAYMENT_WINDOW = timedelta(minutes=15)
@@ -52,8 +53,7 @@ class CommerceService:
     ) -> CommerceOrderOutSchema:
         legacy_user_id, customer_id = await self._resolve_owner(principal)
         existing = await self.repository.get_order_by_idempotency_key(
-            data.idempotency_key,
-            for_update=True,
+            data.idempotency_key
         )
         if existing is not None:
             self._assert_order_idempotent_match(
@@ -129,10 +129,16 @@ class CommerceService:
         order_id: int,
         data: CommerceOrderCancelSchema,
     ) -> CommerceOrderOutSchema:
+        legacy_user_id, customer_id = await self._resolve_owner(principal)
         order = await self.repository.get_order(order_id, for_update=True)
         if order is None:
             raise self._not_found()
-        self._assert_owner(order, principal)
+        self._assert_resolved_owner(
+            order,
+            principal=principal,
+            legacy_user_id=legacy_user_id,
+            customer_id=customer_id,
+        )
         if order.version_no != data.version_no:
             raise self._conflict("订单版本已变化，请刷新后重试")
         if order.status != "pending":
@@ -153,10 +159,16 @@ class CommerceService:
         order_id: int,
         data: PaymentAttemptCreateSchema,
     ) -> PaymentAttemptOutSchema:
+        legacy_user_id, customer_id = await self._resolve_owner(principal)
         order = await self.repository.get_order(order_id, for_update=True)
         if order is None:
             raise self._not_found()
-        self._assert_owner(order, principal)
+        self._assert_resolved_owner(
+            order,
+            principal=principal,
+            legacy_user_id=legacy_user_id,
+            customer_id=customer_id,
+        )
 
         existing = await self.repository.get_payment_attempt_by_idempotency_key(
             order_id=order.id,
@@ -173,6 +185,13 @@ class CommerceService:
             raise self._conflict("当前订单状态不可发起支付")
         if as_utc(order.payment_expires_at) <= now:
             raise self._conflict("订单支付时间已结束")
+
+        active_attempt = await self.repository.get_active_payment_attempt_for_order(
+            order.id,
+            for_update=True,
+        )
+        if active_attempt is not None:
+            raise self._conflict("当前订单已有进行中的支付尝试")
 
         attempt_no = self._new_number("P")
         values = {
@@ -203,11 +222,13 @@ class CommerceService:
                 idempotency_key=data.idempotency_key,
                 for_update=True,
             )
-            if existing is None:
-                raise self._conflict("支付尝试写入冲突，请重新发起支付") from exc
-            if existing.provider != data.provider:
-                raise self._conflict("支付幂等键已用于其他支付提供方")
-            return self._attempt_schema(existing)
+            if existing is not None:
+                if existing.provider != data.provider:
+                    raise self._conflict(
+                        "支付幂等键已用于其他支付提供方"
+                    ) from exc
+                return self._attempt_schema(existing)
+            raise self._conflict("支付尝试写入冲突，请重新发起支付") from exc
 
         return self._attempt_schema(attempt)
 
@@ -220,26 +241,50 @@ class CommerceService:
         existing = await self.repository.get_payment_event(
             provider=data.provider,
             provider_event_id=data.provider_event_id,
-            for_update=True,
         )
         if existing is not None:
             self._assert_event_idempotent_match(existing, data)
             return await self._event_result(existing)
 
-        attempt = await self.repository.get_payment_attempt_by_merchant_request(
+        attempt_hint = await self.repository.get_payment_attempt_by_merchant_request(
             provider=data.provider,
             merchant_request_no=data.merchant_request_no,
-            for_update=True,
         )
-        if attempt is None:
+        if attempt_hint is None:
             raise CustomException(
                 msg="支付尝试不存在",
                 code=RET.NOT_FOUND.code,
                 status_code=RET.NOT_FOUND.code,
             )
-        order = await self.repository.get_order(attempt.order_id, for_update=True)
+
+        order = await self.repository.get_order(attempt_hint.order_id, for_update=True)
         if order is None:
             raise RuntimeError("payment attempt references a missing order")
+        attempt = await self.repository.get_payment_attempt(
+            attempt_hint.id,
+            for_update=True,
+        )
+        if attempt is None:
+            raise RuntimeError("payment attempt disappeared while acquiring locks")
+        if (
+            attempt.order_id != order.id
+            or attempt.provider != data.provider
+            or attempt.merchant_request_no != data.merchant_request_no
+        ):
+            raise self._conflict("支付尝试标识在处理期间发生变化")
+
+        existing = await self.repository.get_payment_event(
+            provider=data.provider,
+            provider_event_id=data.provider_event_id,
+            for_update=True,
+        )
+        if existing is not None:
+            self._assert_event_idempotent_match(existing, data)
+            return PaymentEventResultSchema(
+                event=self._event_schema(existing),
+                order=self._order_schema(order),
+                payment_attempt=self._attempt_schema(attempt),
+            )
 
         processing_status, reason_code = self._decide_event(
             order=order,
@@ -269,6 +314,13 @@ class CommerceService:
         try:
             async with self.db.begin_nested():
                 self.db.add(event)
+                if processing_status == "accepted":
+                    self._apply_accepted_event(
+                        order=order,
+                        attempt=attempt,
+                        data=data,
+                        now=now,
+                    )
                 await self.db.flush()
         except IntegrityError as exc:
             existing = await self.repository.get_payment_event(
@@ -277,18 +329,9 @@ class CommerceService:
                 for_update=True,
             )
             if existing is None:
-                raise self._conflict("支付事件写入冲突，请稍后重试") from exc
+                raise self._conflict("支付事件或聚合状态写入冲突，请稍后重试") from exc
             self._assert_event_idempotent_match(existing, data)
             return await self._event_result(existing)
-
-        if processing_status == "accepted":
-            self._apply_accepted_event(
-                order=order,
-                attempt=attempt,
-                data=data,
-                now=now,
-            )
-            await self.db.flush()
 
         return PaymentEventResultSchema(
             event=self._event_schema(event),
@@ -299,25 +342,70 @@ class CommerceService:
     async def _resolve_owner(
         self,
         principal: PortalPrincipal,
-    ) -> tuple[int | None, int | None]:
-        if not principal.is_authenticated:
+    ) -> tuple[int, int | None]:
+        if not principal.is_authenticated or principal.legacy_user_id is None:
             raise CustomException(
                 msg="请登录后下单",
                 code=RET.UNAUTHORIZED.code,
                 status_code=RET.UNAUTHORIZED.code,
             )
+
         if principal.actor_type == "legacy":
+            migrated_customer_id = await self.db.scalar(
+                select(LegacyCustomerMapModel.customer_id).where(
+                    LegacyCustomerMapModel.legacy_sys_user_id
+                    == principal.legacy_user_id,
+                    LegacyCustomerMapModel.credential_state == "migrated",
+                    LegacyCustomerMapModel.is_deleted.is_(False),
+                )
+            )
+            if migrated_customer_id is not None:
+                raise self._conflict("账号已迁移为客户身份，请使用客户会话下单")
             return principal.legacy_user_id, None
 
-        if principal.actor_type != "customer" or principal.customer_id is None:
+        if (
+            principal.actor_type != "customer"
+            or principal.customer_id is None
+            or principal.subject_id is None
+        ):
             raise CustomException(
                 msg="客户身份无效",
                 code=RET.UNAUTHORIZED.code,
                 status_code=RET.UNAUTHORIZED.code,
             )
+
+        identity = await self.db.execute(
+            select(CustomerModel.id, AuthSubjectModel.id)
+            .join(
+                AuthSubjectModel,
+                and_(
+                    AuthSubjectModel.id == CustomerModel.subject_id,
+                    AuthSubjectModel.realm == CustomerModel.realm,
+                ),
+            )
+            .where(
+                CustomerModel.id == principal.customer_id,
+                CustomerModel.subject_id == principal.subject_id,
+                CustomerModel.realm == "customer",
+                CustomerModel.status == "active",
+                CustomerModel.is_deleted.is_(False),
+                AuthSubjectModel.id == principal.subject_id,
+                AuthSubjectModel.realm == "customer",
+                AuthSubjectModel.status == "active",
+                AuthSubjectModel.is_deleted.is_(False),
+            )
+        )
+        if identity.first() is None:
+            raise CustomException(
+                msg="客户认证主体不可用或归属不一致",
+                code=RET.SERVICE_UNAVAILABLE.code,
+                status_code=RET.SERVICE_UNAVAILABLE.code,
+            )
+
         mapping = await self.db.scalar(
-            select(LegacyCustomerMapModel).where(
-                LegacyCustomerMapModel.legacy_sys_user_id == principal.legacy_user_id,
+            select(LegacyCustomerMapModel.id).where(
+                LegacyCustomerMapModel.legacy_sys_user_id
+                == principal.legacy_user_id,
                 LegacyCustomerMapModel.customer_id == principal.customer_id,
                 LegacyCustomerMapModel.credential_state == "migrated",
                 LegacyCustomerMapModel.is_deleted.is_(False),
@@ -332,29 +420,28 @@ class CommerceService:
         return principal.legacy_user_id, principal.customer_id
 
     @staticmethod
-    def _assert_owner(
+    def _assert_resolved_owner(
         order: CommerceOrderModel,
+        *,
         principal: PortalPrincipal,
+        legacy_user_id: int,
+        customer_id: int | None,
     ) -> None:
-        if not principal.is_authenticated:
-            raise CommerceService._not_found()
         if principal.actor_type == "customer":
-            if order.customer_id != principal.customer_id:
+            if order.customer_id != customer_id:
                 raise CommerceService._not_found()
-            if order.legacy_user_id is not None and order.legacy_user_id != principal.legacy_user_id:
+            if order.legacy_user_id != legacy_user_id:
                 raise CustomException(
                     msg="订单客户归属数据不一致",
                     code=RET.SERVICE_UNAVAILABLE.code,
                     status_code=RET.SERVICE_UNAVAILABLE.code,
                 )
             return
-        if principal.actor_type == "legacy" and order.legacy_user_id == principal.legacy_user_id:
-            if order.customer_id is not None:
-                raise CustomException(
-                    msg="订单已归属客户身份，请使用客户会话访问",
-                    code=RET.UNAUTHORIZED.code,
-                    status_code=RET.UNAUTHORIZED.code,
-                )
+        if (
+            principal.actor_type == "legacy"
+            and order.legacy_user_id == legacy_user_id
+            and order.customer_id is None
+        ):
             return
         raise CommerceService._not_found()
 
@@ -362,7 +449,7 @@ class CommerceService:
     def _assert_order_idempotent_match(
         existing: CommerceOrderModel,
         *,
-        legacy_user_id: int | None,
+        legacy_user_id: int,
         customer_id: int | None,
         plan_id: int,
     ) -> None:
@@ -386,12 +473,12 @@ class CommerceService:
         if cls._currency(attempt.currency) != cls._currency(data.currency):
             return "rejected", "currency_mismatch"
 
-        now = utc_now()
         if data.event_type == "payment_succeeded":
             if order.status == "paid":
                 same_transaction = (
                     attempt.status == "succeeded"
-                    and attempt.provider_transaction_id == data.provider_transaction_id
+                    and attempt.provider_transaction_id
+                    == data.provider_transaction_id
                 )
                 return (
                     ("ignored", "already_paid")
@@ -400,8 +487,11 @@ class CommerceService:
                 )
             if order.status != "pending":
                 return "rejected", "order_not_payable"
-            if as_utc(order.payment_expires_at) <= now:
+            occurred_at = as_utc(data.occurred_at)
+            if occurred_at >= as_utc(order.payment_expires_at):
                 return "rejected", "order_expired"
+            if occurred_at >= as_utc(attempt.expires_at):
+                return "rejected", "attempt_expired"
             if attempt.status not in {"created", "processing"}:
                 return "rejected", "attempt_not_payable"
             return "accepted", None
@@ -413,7 +503,9 @@ class CommerceService:
         if order.status != "pending":
             return "rejected", "order_not_payable"
         return "accepted", data.provider_reason_code or (
-            "provider_failed" if data.event_type == "payment_failed" else "provider_closed"
+            "provider_failed"
+            if data.event_type == "payment_failed"
+            else "provider_closed"
         )
 
     @staticmethod
@@ -422,7 +514,7 @@ class CommerceService:
         order: CommerceOrderModel,
         attempt: PaymentAttemptModel,
         data: VerifiedPaymentEventSchema,
-        now,
+        now: datetime,
     ) -> None:
         if data.event_type == "payment_succeeded":
             attempt.status = "succeeded"
@@ -439,10 +531,14 @@ class CommerceService:
             order.updated_time = now
             return
 
-        attempt.status = "failed" if data.event_type == "payment_failed" else "closed"
+        attempt.status = (
+            "failed" if data.event_type == "payment_failed" else "closed"
+        )
         attempt.failed_at = now
         attempt.failure_code = data.provider_reason_code or (
-            "provider_failed" if data.event_type == "payment_failed" else "provider_closed"
+            "provider_failed"
+            if data.event_type == "payment_failed"
+            else "provider_closed"
         )
         attempt.version_no += 1
         attempt.updated_time = now
@@ -455,10 +551,13 @@ class CommerceService:
         if (
             existing.merchant_request_no != data.merchant_request_no
             or existing.event_type != data.event_type
-            or CommerceService._money(existing.amount) != CommerceService._money(data.amount)
-            or CommerceService._currency(existing.currency) != CommerceService._currency(data.currency)
+            or CommerceService._money(existing.amount)
+            != CommerceService._money(data.amount)
+            or CommerceService._currency(existing.currency)
+            != CommerceService._currency(data.currency)
             or existing.provider_transaction_id != data.provider_transaction_id
             or existing.payload_digest != data.payload_digest
+            or as_utc(existing.occurred_at) != as_utc(data.occurred_at)
         ):
             raise CommerceService._conflict("支付事件幂等键已用于其他回调内容")
 
@@ -481,13 +580,13 @@ class CommerceService:
         return f"{prefix}{uuid4().hex.upper()}"
 
     @staticmethod
-    def _money(value) -> Decimal:
+    def _money(value: Decimal | int | str) -> Decimal:
         return Decimal(value).quantize(_CENT, rounding=ROUND_HALF_UP)
 
     @staticmethod
     def _currency(value: str) -> str:
         normalized = value.strip().upper()
-        if not normalized or len(normalized) > 8:
+        if not normalized.isalpha() or not 3 <= len(normalized) <= 8:
             raise CustomException(
                 msg="套餐币种配置无效",
                 code=RET.BAD_REQUEST.code,
