@@ -1,31 +1,29 @@
-"""Commerce domain.
+"""Commerce domain transaction foundation.
 
-M4 establishes the internal order/payment persistence and transaction boundary.
-Public H5/provider controllers are intentionally added in later stacked changes.
+M4 exposes one canonical order/payment implementation. Public Portal,
+management and provider controllers are added in later stacked changes.
 """
 
-from app.api.v1.module_commerce.order_payment import (
+from .schema import (
+    CommerceOrderCancelSchema,
+    CommerceOrderCreateSchema,
     CommerceOrderOutSchema,
-    CommerceOrderService,
-    CommerceOwner,
-    MembershipOrderCreateSchema,
-    OrderCancelSchema,
     PaymentAttemptCreateSchema,
     PaymentAttemptOutSchema,
     PaymentEventOutSchema,
-    PaymentService,
-    ProviderEventRegisterSchema,
+    PaymentEventResultSchema,
+    VerifiedPaymentEventSchema,
 )
+from .service import CommerceService
 
 __all__ = [
+    "CommerceOrderCancelSchema",
+    "CommerceOrderCreateSchema",
     "CommerceOrderOutSchema",
-    "CommerceOrderService",
-    "CommerceOwner",
-    "MembershipOrderCreateSchema",
-    "OrderCancelSchema",
+    "CommerceService",
     "PaymentAttemptCreateSchema",
     "PaymentAttemptOutSchema",
     "PaymentEventOutSchema",
-    "PaymentService",
-    "ProviderEventRegisterSchema",
+    "PaymentEventResultSchema",
+    "VerifiedPaymentEventSchema",
 ]
