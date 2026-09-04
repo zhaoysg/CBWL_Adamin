@@ -1,4 +1,4 @@
-name: Temporary M4 permanent precision fix v6
+name: Temporary M4 permanent precision fix v7
 
 on:
   push:
@@ -63,7 +63,7 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
 
-      - name: Apply permanent DATETIME(6) and metadata-index fixes
+      - name: Apply permanent DATETIME(6), portable digest and metadata-index fixes
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -107,6 +107,11 @@ jobs:
               "        comment=\"支付提供方事件发生时间\",\n"
               "    )\n",
           )
+          replace_once(
+              MODEL,
+              "CHAR_LENGTH(payload_digest) = 64",
+              "LENGTH(payload_digest) = 64",
+          )
           for table_name in (
               "cw_order",
               "cw_payment_attempt",
@@ -136,6 +141,11 @@ jobs:
               "            ),\n"
               "            nullable=False,\n"
               "        ),\n",
+          )
+          replace_once(
+              MIGRATION,
+              "CHAR_LENGTH(payload_digest) = 64",
+              "LENGTH(payload_digest) = 64",
           )
 
           replace_once(
