@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import mysql
 
 revision: str = "20260903_02"
 down_revision: str | None = "20260903_01"
@@ -264,7 +265,14 @@ def upgrade() -> None:
         sa.Column("payload_digest", sa.String(length=64), nullable=False),
         sa.Column("processing_status", sa.String(length=32), nullable=False),
         sa.Column("reason_code", sa.String(length=128), nullable=True),
-        sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "occurred_at",
+            sa.DateTime(timezone=True).with_variant(
+                mysql.DATETIME(fsp=6),
+                "mysql",
+            ),
+            nullable=False,
+        ),
         sa.Column("processed_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
         sa.CheckConstraint(
@@ -281,7 +289,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("amount >= 0", name="ck_cw_payment_event_amount"),
         sa.CheckConstraint(
-            "CHAR_LENGTH(payload_digest) = 64",
+            "LENGTH(payload_digest) = 64",
             name="ck_cw_payment_event_digest",
         ),
         sa.CheckConstraint(

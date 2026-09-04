@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.base_model import ModelMixin
@@ -82,8 +83,6 @@ class CommerceOrderModel(ModelMixin):
             "payment_expires_at",
             "id",
         ),
-        Index("ix_cw_order_is_deleted", "is_deleted"),
-        Index("ix_cw_order_created_time", "created_time"),
         {"comment": "财不外露客户订单", **_TABLE_OPTIONS},
     )
 
@@ -266,8 +265,6 @@ class PaymentAttemptModel(ModelMixin):
             "created_time",
             "id",
         ),
-        Index("ix_cw_payment_attempt_is_deleted", "is_deleted"),
-        Index("ix_cw_payment_attempt_created_time", "created_time"),
         {"comment": "财不外露订单支付尝试", **_TABLE_OPTIONS},
     )
 
@@ -384,7 +381,7 @@ class PaymentEventModel(ModelMixin):
         ),
         CheckConstraint("amount >= 0", name="ck_cw_payment_event_amount"),
         CheckConstraint(
-            "CHAR_LENGTH(payload_digest) = 64",
+            "LENGTH(payload_digest) = 64",
             name="ck_cw_payment_event_digest",
         ),
         CheckConstraint(
@@ -409,8 +406,6 @@ class PaymentEventModel(ModelMixin):
             "processed_at",
             "id",
         ),
-        Index("ix_cw_payment_event_is_deleted", "is_deleted"),
-        Index("ix_cw_payment_event_created_time", "created_time"),
         {"comment": "财不外露规范化支付事件", **_TABLE_OPTIONS},
     )
 
@@ -488,7 +483,10 @@ class PaymentEventModel(ModelMixin):
         comment="安全、稳定的处理原因代码",
     )
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
+        DateTime(timezone=True).with_variant(
+            mysql.DATETIME(fsp=6),
+            "mysql",
+        ),
         nullable=False,
         comment="支付提供方事件发生时间",
     )

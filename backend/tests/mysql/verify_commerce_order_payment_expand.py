@@ -38,10 +38,7 @@ async def _seed_identity_and_plan() -> tuple[PortalPrincipal, int, str]:
     legacy_user_id = 1_000_000_000 + int(uuid4().hex[:7], 16)
     async with async_db_session() as db, db.begin():
         await db.execute(
-            text(
-                "INSERT INTO sys_user (id, is_deleted) "
-                "VALUES (:id, FALSE)"
-            ),
+            text("INSERT INTO sys_user (id, is_deleted) VALUES (:id, FALSE)"),
             {"id": legacy_user_id},
         )
 
@@ -166,15 +163,11 @@ async def _verify_service_contracts(
         else:
             raise AssertionError("a second active attempt must be rejected")
 
-        order_row = await db.scalar(
-            select(CommerceOrderModel).where(CommerceOrderModel.id == order.id)
-        )
-        attempt_row = await db.scalar(
-            select(PaymentAttemptModel).where(PaymentAttemptModel.id == attempt.id)
-        )
+        order_row = await db.scalar(select(CommerceOrderModel).where(CommerceOrderModel.id == order.id))
+        attempt_row = await db.scalar(select(PaymentAttemptModel).where(PaymentAttemptModel.id == attempt.id))
         assert order_row is not None
         assert attempt_row is not None
-        expired_at = datetime.now(UTC) - timedelta(minutes=1)
+        expired_at = (datetime.now(UTC) - timedelta(minutes=1)).replace(microsecond=123456)
         order_row.payment_expires_at = expired_at
         attempt_row.expires_at = expired_at
         await db.flush()
@@ -196,15 +189,22 @@ async def _verify_service_contracts(
         assert paid.order.status == "paid"
         assert paid.payment_attempt.status == "succeeded"
 
+        paid_event_id = paid.event.id
+        paid_order_version = paid.order.version_no
+        paid_attempt_version = paid.payment_attempt.version_no
+        await db.flush()
+        db.expire_all()
+        persisted_event = await db.scalar(select(PaymentEventModel).where(PaymentEventModel.id == paid_event_id))
+        assert persisted_event is not None
+        assert persisted_event.occurred_at.microsecond == 123456
+
         duplicate = await service.record_verified_payment_event(success_payload)
-        assert duplicate.event.id == paid.event.id
-        assert duplicate.order.version_no == paid.order.version_no
-        assert duplicate.payment_attempt.version_no == paid.payment_attempt.version_no
+        assert duplicate.event.id == paid_event_id
+        assert duplicate.order.version_no == paid_order_version
+        assert duplicate.payment_attempt.version_no == paid_attempt_version
 
         try:
-            await service.record_verified_payment_event(
-                success_payload.model_copy(update={"payload_digest": "b" * 64})
-            )
+            await service.record_verified_payment_event(success_payload.model_copy(update={"payload_digest": "b" * 64}))
         except CustomException as exc:
             assert exc.status_code == 409
         else:
@@ -246,11 +246,7 @@ async def _verify_service_contracts(
         else:
             raise AssertionError("provider transaction reuse must be rejected")
 
-        conflict_event_count = await db.scalar(
-            select(func.count())
-            .select_from(PaymentEventModel)
-            .where(PaymentEventModel.provider_event_id == conflict_event_id)
-        )
+        conflict_event_count = await db.scalar(select(func.count()).select_from(PaymentEventModel).where(PaymentEventModel.provider_event_id == conflict_event_id))
         assert conflict_event_count == 0
 
         recovered = await service.record_verified_payment_event(
@@ -272,11 +268,7 @@ async def _verify_service_contracts(
         assert recovered.order.status == "pending"
         assert recovered.payment_attempt.status == "failed"
 
-        subscriptions = await db.scalar(
-            select(func.count())
-            .select_from(MemberSubscriptionModel)
-            .where(MemberSubscriptionModel.source_ref == order.order_no)
-        )
+        subscriptions = await db.scalar(select(func.count()).select_from(MemberSubscriptionModel).where(MemberSubscriptionModel.source_ref == order.order_no))
         assert subscriptions == 0
 
 
@@ -337,9 +329,7 @@ async def _verify_concurrency(
 
     async def record_same_event():
         async with async_db_session() as db, db.begin():
-            return await CommerceService(db).record_verified_payment_event(
-                concurrent_event_payload
-            )
+            return await CommerceService(db).record_verified_payment_event(concurrent_event_payload)
 
     concurrent_events = await asyncio.gather(
         record_same_event(),
@@ -366,9 +356,7 @@ async def _verify_concurrency(
                 competing_order.id,
                 PaymentAttemptCreateSchema(
                     provider="wechat" if index == 0 else "alipay",
-                    idempotency_key=(
-                        f"mysql-payment:{suffix}:competing:{index}"
-                    ),
+                    idempotency_key=(f"mysql-payment:{suffix}:competing:{index}"),
                 ),
             )
 
@@ -377,45 +365,23 @@ async def _verify_concurrency(
         create_competing_attempt(1),
         return_exceptions=True,
     )
-    successes = [
-        result for result in competing_results if not isinstance(result, Exception)
-    ]
-    conflicts = [
-        result
-        for result in competing_results
-        if isinstance(result, CustomException) and result.status_code == 409
-    ]
+    successes = [result for result in competing_results if not isinstance(result, Exception)]
+    conflicts = [result for result in competing_results if isinstance(result, CustomException) and result.status_code == 409]
     assert len(successes) == 1
     assert len(conflicts) == 1
 
     async with async_db_session() as db:
-        order_count = await db.scalar(
-            select(func.count())
-            .select_from(CommerceOrderModel)
-            .where(
-                CommerceOrderModel.idempotency_key
-                == concurrent_order_payload.idempotency_key
-            )
-        )
-        attempt_count = await db.scalar(
-            select(func.count())
-            .select_from(PaymentAttemptModel)
-            .where(PaymentAttemptModel.order_id == concurrent_orders[0].id)
-        )
+        order_count = await db.scalar(select(func.count()).select_from(CommerceOrderModel).where(CommerceOrderModel.idempotency_key == concurrent_order_payload.idempotency_key))
+        attempt_count = await db.scalar(select(func.count()).select_from(PaymentAttemptModel).where(PaymentAttemptModel.order_id == concurrent_orders[0].id))
         event_count = await db.scalar(
             select(func.count())
             .select_from(PaymentEventModel)
             .where(
                 PaymentEventModel.provider == concurrent_event_payload.provider,
-                PaymentEventModel.provider_event_id
-                == concurrent_event_payload.provider_event_id,
+                PaymentEventModel.provider_event_id == concurrent_event_payload.provider_event_id,
             )
         )
-        competing_attempt_count = await db.scalar(
-            select(func.count())
-            .select_from(PaymentAttemptModel)
-            .where(PaymentAttemptModel.order_id == competing_order.id)
-        )
+        competing_attempt_count = await db.scalar(select(func.count()).select_from(PaymentAttemptModel).where(PaymentAttemptModel.order_id == competing_order.id))
         assert order_count == 1
         assert attempt_count == 1
         assert event_count == 1
@@ -429,12 +395,8 @@ def _verify_schema() -> None:
     assert expected_tables <= set(inspector.get_table_names())
 
     order_columns = {item["name"] for item in inspector.get_columns("cw_order")}
-    attempt_columns = {
-        item["name"] for item in inspector.get_columns("cw_payment_attempt")
-    }
-    event_columns = {
-        item["name"] for item in inspector.get_columns("cw_payment_event")
-    }
+    attempt_columns = {item["name"] for item in inspector.get_columns("cw_payment_attempt")}
+    event_columns = {item["name"] for item in inspector.get_columns("cw_payment_event")}
     assert {
         "legacy_user_id",
         "customer_id",
@@ -466,23 +428,14 @@ def _verify_schema() -> None:
     }.intersection(event_columns)
 
     order_indexes = {item["name"] for item in inspector.get_indexes("cw_order")}
-    attempt_indexes = {
-        item["name"] for item in inspector.get_indexes("cw_payment_attempt")
-    }
+    attempt_indexes = {item["name"] for item in inspector.get_indexes("cw_payment_attempt")}
     assert "ix_cw_order_customer_status_created" in order_indexes
     assert "ix_cw_order_status_expiry" in order_indexes
     assert "ix_cw_payment_attempt_order_status" in attempt_indexes
 
-    order_checks = {
-        item["name"] for item in inspector.get_check_constraints("cw_order")
-    }
-    attempt_checks = {
-        item["name"]
-        for item in inspector.get_check_constraints("cw_payment_attempt")
-    }
-    event_checks = {
-        item["name"] for item in inspector.get_check_constraints("cw_payment_event")
-    }
+    order_checks = {item["name"] for item in inspector.get_check_constraints("cw_order")}
+    attempt_checks = {item["name"] for item in inspector.get_check_constraints("cw_payment_attempt")}
+    event_checks = {item["name"] for item in inspector.get_check_constraints("cw_payment_event")}
     assert "ck_cw_order_owner" in order_checks
     assert "ck_cw_order_paid_shape" in order_checks
     assert "ck_cw_payment_attempt_succeeded_shape" in attempt_checks
@@ -492,14 +445,7 @@ def _verify_schema() -> None:
 
     with engine.connect() as connection:
         rows = connection.execute(
-            text(
-                "SELECT TABLE_NAME, TABLE_COLLATION "
-                "FROM information_schema.TABLES "
-                "WHERE TABLE_SCHEMA = DATABASE() "
-                "AND TABLE_NAME IN ("
-                "'cw_order', 'cw_payment_attempt', 'cw_payment_event'"
-                ")"
-            )
+            text("SELECT TABLE_NAME, TABLE_COLLATION FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME IN ('cw_order', 'cw_payment_attempt', 'cw_payment_event')")
         ).all()
         referential_actions = connection.execute(
             text(
@@ -511,18 +457,16 @@ def _verify_schema() -> None:
                 ")"
             )
         ).all()
+        occurred_at_precision = connection.execute(
+            text("SELECT DATETIME_PRECISION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cw_payment_event' AND COLUMN_NAME = 'occurred_at'")
+        ).scalar_one()
     collations = dict(rows)
     assert set(collations) == expected_tables
     assert set(collations.values()) == {"utf8mb4_bin"}
+    assert occurred_at_precision == 6
     assert referential_actions
-    assert all(
-        update_rule in {"NO ACTION", "RESTRICT"}
-        for _, update_rule, _ in referential_actions
-    )
-    assert all(
-        delete_rule in {"NO ACTION", "RESTRICT"}
-        for _, _, delete_rule in referential_actions
-    )
+    assert all(update_rule in {"NO ACTION", "RESTRICT"} for _, update_rule, _ in referential_actions)
+    assert all(delete_rule in {"NO ACTION", "RESTRICT"} for _, _, delete_rule in referential_actions)
 
     engine.dispose()
 

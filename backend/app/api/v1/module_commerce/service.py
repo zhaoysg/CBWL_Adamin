@@ -52,9 +52,7 @@ class CommerceService:
         data: CommerceOrderCreateSchema,
     ) -> CommerceOrderOutSchema:
         legacy_user_id, customer_id = await self._resolve_owner(principal)
-        existing = await self.repository.get_order_by_idempotency_key(
-            data.idempotency_key
-        )
+        existing = await self.repository.get_order_by_idempotency_key(data.idempotency_key)
         if existing is not None:
             self._assert_order_idempotent_match(
                 existing,
@@ -224,9 +222,7 @@ class CommerceService:
             )
             if existing is not None:
                 if existing.provider != data.provider:
-                    raise self._conflict(
-                        "支付幂等键已用于其他支付提供方"
-                    ) from exc
+                    raise self._conflict("支付幂等键已用于其他支付提供方") from exc
                 return self._attempt_schema(existing)
             raise self._conflict("支付尝试写入冲突，请重新发起支付") from exc
 
@@ -266,11 +262,7 @@ class CommerceService:
         )
         if attempt is None:
             raise RuntimeError("payment attempt disappeared while acquiring locks")
-        if (
-            attempt.order_id != order.id
-            or attempt.provider != data.provider
-            or attempt.merchant_request_no != data.merchant_request_no
-        ):
+        if attempt.order_id != order.id or attempt.provider != data.provider or attempt.merchant_request_no != data.merchant_request_no:
             raise self._conflict("支付尝试标识在处理期间发生变化")
 
         existing = await self.repository.get_payment_event(
@@ -353,8 +345,7 @@ class CommerceService:
         if principal.actor_type == "legacy":
             migrated_customer_id = await self.db.scalar(
                 select(LegacyCustomerMapModel.customer_id).where(
-                    LegacyCustomerMapModel.legacy_sys_user_id
-                    == principal.legacy_user_id,
+                    LegacyCustomerMapModel.legacy_sys_user_id == principal.legacy_user_id,
                     LegacyCustomerMapModel.credential_state == "migrated",
                     LegacyCustomerMapModel.is_deleted.is_(False),
                 )
@@ -363,11 +354,7 @@ class CommerceService:
                 raise self._conflict("账号已迁移为客户身份，请使用客户会话下单")
             return principal.legacy_user_id, None
 
-        if (
-            principal.actor_type != "customer"
-            or principal.customer_id is None
-            or principal.subject_id is None
-        ):
+        if principal.actor_type != "customer" or principal.customer_id is None or principal.subject_id is None:
             raise CustomException(
                 msg="客户身份无效",
                 code=RET.UNAUTHORIZED.code,
@@ -404,8 +391,7 @@ class CommerceService:
 
         mapping = await self.db.scalar(
             select(LegacyCustomerMapModel.id).where(
-                LegacyCustomerMapModel.legacy_sys_user_id
-                == principal.legacy_user_id,
+                LegacyCustomerMapModel.legacy_sys_user_id == principal.legacy_user_id,
                 LegacyCustomerMapModel.customer_id == principal.customer_id,
                 LegacyCustomerMapModel.credential_state == "migrated",
                 LegacyCustomerMapModel.is_deleted.is_(False),
@@ -437,11 +423,7 @@ class CommerceService:
                     status_code=RET.SERVICE_UNAVAILABLE.code,
                 )
             return
-        if (
-            principal.actor_type == "legacy"
-            and order.legacy_user_id == legacy_user_id
-            and order.customer_id is None
-        ):
+        if principal.actor_type == "legacy" and order.legacy_user_id == legacy_user_id and order.customer_id is None:
             return
         raise CommerceService._not_found()
 
@@ -453,11 +435,7 @@ class CommerceService:
         customer_id: int | None,
         plan_id: int,
     ) -> None:
-        if (
-            existing.legacy_user_id != legacy_user_id
-            or existing.customer_id != customer_id
-            or existing.plan_id != plan_id
-        ):
+        if existing.legacy_user_id != legacy_user_id or existing.customer_id != customer_id or existing.plan_id != plan_id:
             raise CommerceService._conflict("订单幂等键已用于其他下单参数")
 
     @classmethod
@@ -475,16 +453,8 @@ class CommerceService:
 
         if data.event_type == "payment_succeeded":
             if order.status == "paid":
-                same_transaction = (
-                    attempt.status == "succeeded"
-                    and attempt.provider_transaction_id
-                    == data.provider_transaction_id
-                )
-                return (
-                    ("ignored", "already_paid")
-                    if same_transaction
-                    else ("rejected", "order_already_paid")
-                )
+                same_transaction = attempt.status == "succeeded" and attempt.provider_transaction_id == data.provider_transaction_id
+                return ("ignored", "already_paid") if same_transaction else ("rejected", "order_already_paid")
             if order.status != "pending":
                 return "rejected", "order_not_payable"
             occurred_at = as_utc(data.occurred_at)
@@ -502,11 +472,7 @@ class CommerceService:
             return "ignored", f"already_{attempt.status}"
         if order.status != "pending":
             return "rejected", "order_not_payable"
-        return "accepted", data.provider_reason_code or (
-            "provider_failed"
-            if data.event_type == "payment_failed"
-            else "provider_closed"
-        )
+        return "accepted", data.provider_reason_code or ("provider_failed" if data.event_type == "payment_failed" else "provider_closed")
 
     @staticmethod
     def _apply_accepted_event(
@@ -531,15 +497,9 @@ class CommerceService:
             order.updated_time = now
             return
 
-        attempt.status = (
-            "failed" if data.event_type == "payment_failed" else "closed"
-        )
+        attempt.status = "failed" if data.event_type == "payment_failed" else "closed"
         attempt.failed_at = now
-        attempt.failure_code = data.provider_reason_code or (
-            "provider_failed"
-            if data.event_type == "payment_failed"
-            else "provider_closed"
-        )
+        attempt.failure_code = data.provider_reason_code or ("provider_failed" if data.event_type == "payment_failed" else "provider_closed")
         attempt.version_no += 1
         attempt.updated_time = now
 
@@ -551,10 +511,8 @@ class CommerceService:
         if (
             existing.merchant_request_no != data.merchant_request_no
             or existing.event_type != data.event_type
-            or CommerceService._money(existing.amount)
-            != CommerceService._money(data.amount)
-            or CommerceService._currency(existing.currency)
-            != CommerceService._currency(data.currency)
+            or CommerceService._money(existing.amount) != CommerceService._money(data.amount)
+            or CommerceService._currency(existing.currency) != CommerceService._currency(data.currency)
             or existing.provider_transaction_id != data.provider_transaction_id
             or existing.payload_digest != data.payload_digest
             or as_utc(existing.occurred_at) != as_utc(data.occurred_at)

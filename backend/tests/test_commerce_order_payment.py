@@ -155,9 +155,7 @@ async def test_order_amount_ownership_and_creation_idempotency(
 ) -> None:
     suffix = _suffix()
     async with async_db_session() as db, db.begin():
-        customer, mapped_legacy, subject, first_plan, second_plan = (
-            await _seed_customer_and_plans(db, suffix)
-        )
+        customer, mapped_legacy, subject, first_plan, second_plan = await _seed_customer_and_plans(db, suffix)
         service = CommerceService(db)
         key = f"order:{suffix}:0001"
         payload = CommerceOrderCreateSchema(
@@ -334,12 +332,8 @@ async def test_payment_event_state_machine_late_delivery_and_savepoint_rollback(
         assert bad_amount.order.status == "pending"
         assert bad_amount.payment_attempt.status == "created"
 
-        order_model = await db.scalar(
-            select(CommerceOrderModel).where(CommerceOrderModel.id == order.id)
-        )
-        attempt_model = await db.scalar(
-            select(PaymentAttemptModel).where(PaymentAttemptModel.id == attempt.id)
-        )
+        order_model = await db.scalar(select(CommerceOrderModel).where(CommerceOrderModel.id == order.id))
+        attempt_model = await db.scalar(select(PaymentAttemptModel).where(PaymentAttemptModel.id == attempt.id))
         assert order_model is not None
         assert attempt_model is not None
         expired_at = datetime.now(UTC) - timedelta(minutes=1)
@@ -375,9 +369,7 @@ async def test_payment_event_state_machine_late_delivery_and_savepoint_rollback(
         assert duplicate.payment_attempt.version_no == paid.payment_attempt.version_no
 
         with pytest.raises(CustomException) as changed_payload:
-            await service.record_verified_payment_event(
-                success_payload.model_copy(update={"payload_digest": "b" * 64})
-            )
+            await service.record_verified_payment_event(success_payload.model_copy(update={"payload_digest": "b" * 64}))
         assert changed_payload.value.status_code == 409
 
         late_failure = await service.record_verified_payment_event(
@@ -444,11 +436,7 @@ async def test_payment_event_state_machine_late_delivery_and_savepoint_rollback(
             )
         assert provider_transaction_conflict.value.status_code == 409
 
-        conflict_event_count = await db.scalar(
-            select(func.count())
-            .select_from(PaymentEventModel)
-            .where(PaymentEventModel.provider_event_id == conflicting_event_id)
-        )
+        conflict_event_count = await db.scalar(select(func.count()).select_from(PaymentEventModel).where(PaymentEventModel.provider_event_id == conflicting_event_id))
         assert conflict_event_count == 0
 
         recovered = await service.record_verified_payment_event(
@@ -470,11 +458,7 @@ async def test_payment_event_state_machine_late_delivery_and_savepoint_rollback(
         assert recovered.order.status == "pending"
         assert recovered.payment_attempt.status == "failed"
 
-        subscriptions = await db.scalar(
-            select(func.count())
-            .select_from(MemberSubscriptionModel)
-            .where(MemberSubscriptionModel.source_ref == order.order_no)
-        )
+        subscriptions = await db.scalar(select(func.count()).select_from(MemberSubscriptionModel).where(MemberSubscriptionModel.source_ref == order.order_no))
         assert subscriptions == 0
 
         event_columns = set(PaymentEventModel.__table__.columns.keys())
